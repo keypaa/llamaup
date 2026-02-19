@@ -126,6 +126,10 @@ jobs:
     container:
       image: nvidia/cuda:${{ matrix.cuda_image }}-devel-ubuntu22.04
 
+    defaults:
+      run:
+        shell: bash
+
     steps:
       - name: Checkout llamaup
         uses: actions/checkout@v4
@@ -156,6 +160,17 @@ jobs:
               https://github.com/ggerganov/llama.cpp.git "$SRC_DIR"
           fi
           git -C "$SRC_DIR" checkout --quiet "$VERSION"
+
+      - name: Create libcuda stub symlink
+        run: |
+          # The devel image ships libcuda.so (stub) but not the versioned libcuda.so.1
+          # that the linker requires when building against libggml-cuda. Create it.
+          STUB_DIR="/usr/local/cuda/lib64/stubs"
+          if [[ -f "${STUB_DIR}/libcuda.so" && ! -f "${STUB_DIR}/libcuda.so.1" ]]; then
+            ln -s "${STUB_DIR}/libcuda.so" "${STUB_DIR}/libcuda.so.1"
+          fi
+          echo "${STUB_DIR}" >> /etc/ld.so.conf.d/cuda-stubs.conf
+          ldconfig
 
       - name: cmake configure
         run: |
@@ -219,6 +234,10 @@ jobs:
 
     container:
       image: nvidia/cuda:${{ matrix.cuda_image }}-runtime-ubuntu22.04
+
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Download artifact
