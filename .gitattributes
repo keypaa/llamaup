@@ -1,0 +1,14 @@
+# Ensure shell scripts always use LF line endings (required on Linux)
+*.sh text eol=lf
+
+# JSON and YAML also get LF
+*.json text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+
+# Markdown gets auto (LF stored, native on checkout)
+*.md text
+
+# Binaries — no line ending conversion
+*.tar.gz binary
+*.sha256 binary

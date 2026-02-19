@@ -1,0 +1,313 @@
+name: Build & Release llama.cpp CUDA Binaries
+
+# ---------------------------------------------------------------------------
+# Triggers
+# ---------------------------------------------------------------------------
+on:
+  schedule:
+    - cron: '0 4 * * *'          # daily at 04:00 UTC
+
+  workflow_dispatch:
+    inputs:
+      llama_version:
+        description: 'llama.cpp release tag (e.g. b4200) or "latest"'
+        required: false
+        default: 'latest'
+      sm_versions:
+        description: 'Comma-separated SM versions to build (e.g. "89,90"). Leave blank for all.'
+        required: false
+        default: ''
+      force_rebuild:
+        description: 'Rebuild even if a release for this version already exists'
+        required: false
+        default: 'false'
+        type: boolean
+
+  repository_dispatch:
+    types: [new-llama-release]    # external webhook trigger
+
+# ---------------------------------------------------------------------------
+# Permissions needed to create releases and upload assets
+# ---------------------------------------------------------------------------
+permissions:
+  contents: write
+
+# ---------------------------------------------------------------------------
+# Job 1: resolve-version
+# Determines the exact llama.cpp tag to build and whether it's already built.
+# ---------------------------------------------------------------------------
+jobs:
+  resolve-version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      already_built: ${{ steps.check.outputs.already_built }}
+      sm_matrix: ${{ steps.matrix.outputs.sm_matrix }}
+
+    steps:
+      - name: Resolve llama.cpp version
+        id: resolve
+        run: |
+          INPUT_VERSION="${{ github.event.inputs.llama_version || github.event.client_payload.version || 'latest' }}"
+
+          if [[ "$INPUT_VERSION" == "latest" ]]; then
+            VERSION=$(curl -fsSL https://api.github.com/repos/ggerganov/llama.cpp/releases/latest \
+              | jq -r '.tag_name')
+          else
+            VERSION="$INPUT_VERSION"
+          fi
+
+          echo "Resolved version: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check if release already exists
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.resolve.outputs.version }}"
+          FORCE="${{ github.event.inputs.force_rebuild || 'false' }}"
+
+          if [[ "$FORCE" == "true" ]]; then
+            echo "force_rebuild=true — skipping already-built check"
+            echo "already_built=false" >> "$GITHUB_OUTPUT"
+          elif gh release view "$VERSION" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release $VERSION already exists. Skipping build."
+            echo "already_built=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Release $VERSION does not yet exist. Proceeding with build."
+            echo "already_built=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build SM matrix
+        id: matrix
+        run: |
+          SM_INPUT="${{ github.event.inputs.sm_versions || '' }}"
+
+          # Full default matrix
+          ALL_SMS='[
+            {"sm":"75",  "cuda_image":"12.4.0"},
+            {"sm":"80",  "cuda_image":"12.4.0"},
+            {"sm":"86",  "cuda_image":"12.4.0"},
+            {"sm":"89",  "cuda_image":"12.4.0"},
+            {"sm":"90",  "cuda_image":"12.4.0"},
+            {"sm":"100", "cuda_image":"12.8.0"},
+            {"sm":"101", "cuda_image":"12.8.0"},
+            {"sm":"120", "cuda_image":"12.8.0"}
+          ]'
+
+          if [[ -z "$SM_INPUT" ]]; then
+            # No filter — use all
+            echo "sm_matrix=$(echo "$ALL_SMS" | jq -c .)" >> "$GITHUB_OUTPUT"
+          else
+            # Filter to only requested SM versions
+            IFS=',' read -ra REQUESTED <<< "$SM_INPUT"
+            FILTER=$(printf '%s\n' "${REQUESTED[@]}" | jq -R . | jq -sc .)
+            FILTERED=$(echo "$ALL_SMS" | jq -c --argjson f "$FILTER" '[.[] | select(.sm as $s | $f | index($s))]')
+            echo "sm_matrix=$FILTERED" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Job 2: build (matrix)
+  # Compiles llama.cpp inside the nvidia/cuda Docker container for each SM.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build SM ${{ matrix.sm }} (CUDA ${{ matrix.cuda_image }})
+    needs: resolve-version
+    if: needs.resolve-version.outputs.already_built == 'false'
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.resolve-version.outputs.sm_matrix) }}
+
+    container:
+      image: nvidia/cuda:${{ matrix.cuda_image }}-devel-ubuntu22.04
+
+    steps:
+      - name: Checkout llamaup
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          apt-get update -qq
+          apt-get install -y --no-install-recommends \
+            cmake ninja-build git jq curl ca-certificates
+
+      - name: Restore llama.cpp source cache
+        id: cache-src
+        uses: actions/cache@v4
+        with:
+          path: /tmp/llamaup-src
+          key: llamaup-src-${{ needs.resolve-version.outputs.version }}
+
+      - name: Clone / checkout llama.cpp
+        run: |
+          VERSION="${{ needs.resolve-version.outputs.version }}"
+          SRC_DIR="/tmp/llamaup-src"
+
+          if [[ -d "${SRC_DIR}/.git" ]]; then
+            echo "Source cached — fetching tags..."
+            git -C "$SRC_DIR" fetch --tags --quiet
+          else
+            git clone --filter=blob:none --no-checkout --quiet \
+              https://github.com/ggerganov/llama.cpp.git "$SRC_DIR"
+          fi
+          git -C "$SRC_DIR" checkout --quiet "$VERSION"
+
+      - name: cmake configure
+        run: |
+          cmake -S /tmp/llamaup-src \
+                -B /tmp/llamaup-build \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DGGML_CUDA=ON \
+                -DCMAKE_CUDA_ARCHITECTURES=${{ matrix.sm }} \
+                -DCMAKE_INSTALL_PREFIX=/tmp/llamaup-install \
+                -G Ninja
+
+      - name: cmake build
+        run: cmake --build /tmp/llamaup-build --parallel "$(nproc)"
+
+      - name: cmake install
+        run: cmake --install /tmp/llamaup-build
+
+      - name: Detect CUDA toolkit version
+        id: cuda-ver
+        run: |
+          CUDA_VER=$(nvcc --version | grep -oP 'release \K[0-9]+\.[0-9]+')
+          echo "cuda_version=$CUDA_VER" >> "$GITHUB_OUTPUT"
+
+      - name: Package tarball
+        id: package
+        run: |
+          VERSION="${{ needs.resolve-version.outputs.version }}"
+          SM="${{ matrix.sm }}"
+          CUDA="${{ steps.cuda-ver.outputs.cuda_version }}"
+          ARCHIVE="llama-${VERSION}-linux-cuda${CUDA}-sm${SM}-x64.tar.gz"
+
+          tar -czf "/tmp/${ARCHIVE}" -C /tmp/llamaup-install .
+          sha256sum "/tmp/${ARCHIVE}" | awk '{print $1 "  '"${ARCHIVE}"'"}' > "/tmp/${ARCHIVE}.sha256"
+
+          echo "archive=/tmp/${ARCHIVE}" >> "$GITHUB_OUTPUT"
+          echo "archive_name=${ARCHIVE}"   >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-sm${{ matrix.sm }}
+          path: |
+            ${{ steps.package.outputs.archive }}
+            ${{ steps.package.outputs.archive }}.sha256
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # Job 3: smoke-test (matrix, same SM matrix)
+  # Downloads each artifact and verifies the binary actually runs.
+  # ---------------------------------------------------------------------------
+  smoke-test:
+    name: Smoke test SM ${{ matrix.sm }}
+    needs: [resolve-version, build]
+    if: needs.resolve-version.outputs.already_built == 'false'
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.resolve-version.outputs.sm_matrix) }}
+
+    container:
+      image: nvidia/cuda:${{ matrix.cuda_image }}-runtime-ubuntu22.04
+
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: binary-sm${{ matrix.sm }}
+          path: /tmp/artifact
+
+      - name: Extract and run smoke test
+        run: |
+          mkdir -p /tmp/smoke
+          tar -xzf /tmp/artifact/*.tar.gz -C /tmp/smoke
+
+          # Find llama-cli binary
+          BINARY=$(find /tmp/smoke -name 'llama-cli' -type f | head -n1)
+          if [[ -z "$BINARY" ]]; then
+            echo "ERROR: llama-cli not found in archive" >&2
+            exit 1
+          fi
+
+          chmod +x "$BINARY"
+
+          # Run --version and verify it produces output
+          OUTPUT=$("$BINARY" --version 2>&1 || true)
+          if [[ -z "$OUTPUT" ]]; then
+            echo "ERROR: llama-cli --version produced no output" >&2
+            exit 1
+          fi
+
+          echo "Smoke test passed: $OUTPUT"
+
+  # ---------------------------------------------------------------------------
+  # Job 4: release
+  # Creates the GitHub Release and uploads all binaries.
+  # Only runs if ALL smoke tests passed.
+  # ---------------------------------------------------------------------------
+  release:
+    name: Publish GitHub Release
+    needs: [resolve-version, smoke-test]
+    if: needs.resolve-version.outputs.already_built == 'false'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout llamaup
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binary-sm*
+          path: /tmp/release-assets
+          merge-multiple: true
+
+      - name: Create GitHub Release and upload assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.resolve-version.outputs.version }}"
+
+          # Build the release body with the GPU table
+          BODY=$(cat <<EOF
+          ## llama.cpp ${VERSION} — Pre-built CUDA binaries
+
+          Built by [llamaup](https://github.com/${{ github.repository }}) for all supported SM versions.
+
+          ### Quick install
+
+          \`\`\`bash
+          ./scripts/pull.sh --version ${VERSION}
+          \`\`\`
+
+          ### Available builds
+
+          | SM  | Architecture          | CUDA   |
+          |-----|-----------------------|--------|
+          | 75  | Turing                | 12.4   |
+          | 80  | Ampere HPC            | 12.4   |
+          | 86  | Ampere Consumer       | 12.4   |
+          | 89  | Ada Lovelace          | 12.4   |
+          | 90  | Hopper                | 12.4   |
+          | 100 | Blackwell Datacenter  | 12.8   |
+          | 101 | Blackwell Consumer    | 12.8   |
+          | 120 | Blackwell Workstation | 12.8   |
+          EOF
+          )
+
+          gh release create "$VERSION" \
+            --repo "${{ github.repository }}" \
+            --title "llama.cpp ${VERSION}" \
+            --notes "$BODY" \
+            /tmp/release-assets/*.tar.gz \
+            /tmp/release-assets/*.sha256
