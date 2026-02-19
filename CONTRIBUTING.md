@@ -69,23 +69,23 @@ and upload a binary.
 
 ```bash
 # 1. Clone llamaup
-git clone https://github.com/your-org/llamaup.git
+git clone https://github.com/keypaa/llamaup.git
 cd llamaup
 
 # 2. Build for your SM version and upload to the project's releases
-./scripts/build.sh --sm <your-sm> --upload --repo your-org/llamaup
+./scripts/build.sh --sm <your-sm> --upload --repo keypaa/llamaup
 ```
 
 For example, for a Hopper H100 (SM 90):
 
 ```bash
-./scripts/build.sh --sm 90 --upload --repo your-org/llamaup
+./scripts/build.sh --sm 90 --upload --repo keypaa/llamaup
 ```
 
 ### Verify the upload worked
 
 ```bash
-./scripts/list.sh --repo your-org/llamaup
+./scripts/list.sh --repo keypaa/llamaup
 ```
 
 Your new binary should appear in the table.

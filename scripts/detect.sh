@@ -270,7 +270,7 @@ main() {
       else
         echo -e "    SM version : ${YELLOW}unknown${RESET}"
         echo -e "    ${YELLOW}→ GPU not found in gpu_map.json. Please open an issue:${RESET}"
-        echo -e "    ${YELLOW}  https://github.com/your-org/llamaup/issues/new?template=wrong_sm.md${RESET}"
+        echo -e "    ${YELLOW}  https://github.com/keypaa/llamaup/issues/new?template=wrong_sm.md${RESET}"
       fi
       echo
     done

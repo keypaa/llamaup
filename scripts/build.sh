@@ -169,7 +169,7 @@ detect_sm() {
   sm=$(lookup_sm "$first_gpu" "$gpu_map")
 
   if [[ -z "$sm" ]]; then
-    error "GPU '${first_gpu}' not found in gpu_map.json.\n  → Use --sm to specify the SM version manually.\n  → Or open an issue: https://github.com/your-org/llamaup/issues"
+    error "GPU '${first_gpu}' not found in gpu_map.json.\n  → Use --sm to specify the SM version manually.\n  → Or open an issue: https://github.com/keypaa/llamaup/issues"
   fi
 
   echo "$sm"

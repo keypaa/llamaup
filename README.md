@@ -26,11 +26,11 @@ This repo gives you:
 ### On a machine where you want to run llama.cpp
 
 ```bash
-git clone https://github.com/YOUR_ORG/llama-deploy
-cd llama-deploy
+git clone https://github.com/keypaa/llamaup
+cd llamaup
 
 # Set the repo that hosts your pre-built binaries
-export LLAMA_DEPLOY_REPO=YOUR_ORG/llama-deploy
+export LLAMA_DEPLOY_REPO=keypaa/llamaup
 
 # Pull the right binary for your GPU (auto-detected)
 ./scripts/pull.sh
@@ -67,7 +67,7 @@ Many GPUs share the same SM (Streaming Multiprocessor) architecture, so you don'
 ### Build for your current machine's GPU (and upload)
 
 ```bash
-export LLAMA_DEPLOY_REPO=YOUR_ORG/llama-deploy
+export LLAMA_DEPLOY_REPO=keypaa/llamaup
 export GITHUB_TOKEN=your_token
 
 ./scripts/build.sh --upload
@@ -170,7 +170,7 @@ Each archive contains the full llama.cpp install tree (binaries, libraries). A c
 ## Setup: forking this repo
 
 1. Fork this repo to your GitHub account or org
-2. Set `LLAMA_DEPLOY_REPO=your-org/llama-deploy` in your environment (or `.bashrc`)
+2. Set `LLAMA_DEPLOY_REPO=keypaa/llamaup` in your environment (or `.bashrc`)
 3. Enable GitHub Actions in your fork
 4. Optionally trigger the first build manually from the Actions tab
 5. Run `./scripts/pull.sh` on any of your machines
