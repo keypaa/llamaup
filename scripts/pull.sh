@@ -214,6 +214,13 @@ install_binary() {
   local bin_dir
   bin_dir="$(dirname "$install_dir")"
 
+  # Ensure installed binaries are executable but not world-writable.
+  # Use 0755: owner rwx, group rx, others rx — sufficient for CLI binaries.
+  if [[ -d "${install_dir}/bin" ]]; then
+    find "${install_dir}/bin" -maxdepth 1 -type f -exec chmod 755 {} \;
+    success "Set executable permissions: ${install_dir}/bin/* -> 755"
+  fi
+
   for binary in llama-cli llama-server llama-bench; do
     local bin_path="${install_dir}/bin/${binary}"
     if [[ -f "$bin_path" ]]; then
@@ -327,6 +334,7 @@ main() {
     echo -e "    4. Verify SHA256"
     echo -e "    5. Extract to ${install_dir}"
     echo -e "    6. Symlink llama-cli, llama-server, llama-bench"
+    echo -e "    7. Set executable permissions (chmod 755) on installed binaries"
     echo
     exit 0
   fi
