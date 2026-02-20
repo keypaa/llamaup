@@ -232,8 +232,9 @@ build() {
     -DGGML_CUDA=ON \
     -DCMAKE_CUDA_ARCHITECTURES="${sm_version}" \
     -DCMAKE_INSTALL_PREFIX="$install_dir" \
+    -DLLAMA_CURL=ON \
     -G Ninja \
-    2>&1 || error "cmake configure failed.\n  → Check that CUDA toolkit is installed and nvcc is in PATH.\n  → Try: nvcc --version"
+    2>&1 || error "cmake configure failed.\n  → Check that CUDA toolkit is installed and nvcc is in PATH.\n  → OpenSSL dev files required for HTTPS: apt install libssl-dev (Debian/Ubuntu) or yum install openssl-devel (RHEL/CentOS)\n  → Try: nvcc --version"
 
   info "Compiling with ${build_jobs} jobs..."
   cmake --build "$build_dir" --parallel "$build_jobs" \

@@ -41,6 +41,121 @@ export LLAMA_DEPLOY_REPO=keypaa/llamaup
 
 That's it. The script detects your GPU, finds the matching binary, verifies the checksum, and installs it to `~/.local/bin/llama`.
 
+**Add to your PATH:**
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+---
+
+## Using llama.cpp (Quick Reference)
+
+After installation, you have three main binaries available:
+
+### 1. **llama-cli** — Command-line inference
+
+> **💡 Tip:** Modern llama.cpp versions (8000+) can download models automatically! Use `-hf user/repo:quant` to download from Hugging Face without manual steps.
+
+```bash
+# Automatic download + run (recommended for newer versions)
+llama-cli -hf bartowski/Qwen2.5-7B-Instruct-GGUF:Q4_K_M \
+  -cnv \
+  -t 8 \
+  -c 8192 \
+  --temp 0.7
+
+# Or download manually first (if you prefer)
+huggingface-cli download bartowski/Qwen2.5-7B-Instruct-GGUF Qwen2.5-7B-Instruct-Q4_K_M.gguf --local-dir ./models
+
+# Then run with local file
+llama-cli -m ./models/Qwen2.5-7B-Instruct-Q4_K_M.gguf \
+  -cnv \
+  -n 512 \
+  --temp 0.7 \
+  -t 8 \
+  -c 8192
+```
+
+**Model download options (built-in):**
+- `-hf <user>/<repo>[:quant]` — Download from Hugging Face (e.g., `bartowski/Qwen2.5-7B-Instruct-GGUF:Q4_K_M`)
+- `-mu <url>` — Download from direct URL
+- `--hf-token` — Use HuggingFace token for private/gated models
+
+**Common flags:**
+- `-m` — path to your `.gguf` model file
+- `-p` — prompt text
+- `-n` — max tokens to generate (default: -1 = unlimited)
+- `-t` — number of threads (use your CPU core count)
+- `-c` — context size (default: loaded from model)
+- `--temp` — temperature (0.0 = deterministic, 1.0 = creative)
+- `-cnv` / `--conversation` — conversation mode (interactive, hides special tokens)
+- `-st` / `--single-turn` — run conversation for a single turn, then exit
+- `-sys` / `--system-prompt` — system prompt to use with chat models
+- `--color` — colorize output (`on`, `off`, or `auto`)
+
+> **Note:** Run `llama-cli --help` to see all available options for your version.
+
+### 2. **llama-server** — HTTP API server (recommended for chat)
+
+```bash
+# Start the server
+llama-server -m ./models/Qwen2.5-7B-Instruct-Q4_K_M.gguf \
+  -c 8192 \
+  --port 8080 \
+  --host 0.0.0.0
+
+# Access the web UI at http://localhost:8080
+# Or use the API:
+curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "temperature": 0.7,
+    "max_tokens": 512
+  }'
+```
+
+The server provides an OpenAI-compatible API — great for integrations with tools like Open WebUI, LobeChat, or your own apps.
+
+### 3. **llama-bench** — Performance benchmarking
+
+```bash
+# Benchmark prompt processing and generation speed
+llama-bench -m ./models/Qwen2.5-7B-Instruct-Q4_K_M.gguf
+```
+
+### Getting models
+
+**Option 1: Built-in download (easiest, requires llama.cpp 8000+)**
+```bash
+# llama.cpp downloads the model automatically
+llama-cli -hf bartowski/Qwen2.5-7B-Instruct-GGUF:Q4_K_M -cnv -t 8
+llama-server -hf bartowski/Qwen2.5-7B-Instruct-GGUF:Q4_K_M -c 8192
+```
+
+**Option 2: Manual download**
+- [Hugging Face](https://huggingface.co/models?search=gguf) — search for "gguf"
+- Popular quantizers: [bartowski](https://huggingface.co/bartowski), [mradermacher](https://huggingface.co/mradermacher), [TheBloke](https://huggingface.co/TheBloke)
+
+```bash
+# Using huggingface-cli
+huggingface-cli download bartowski/Qwen2.5-7B-Instruct-GGUF Qwen2.5-7B-Instruct-Q4_K_M.gguf --local-dir ./models
+```
+
+**Quantization guide:**
+- `Q4_K_M` — best quality/size tradeoff (recommended)
+- `Q5_K_M` — higher quality, larger size
+- `Q8_0` — near-original quality, large
+- `Q3_K_M` — smaller, lower quality
+
+### Full help
+
+```bash
+llama-cli --help
+llama-server --help
+llama-bench --help
+```
+
 ---
 
 ## GPU → SM version map
@@ -186,6 +301,9 @@ Each archive contains the full llama.cpp install tree (binaries, libraries). A c
 **For building locally:**
 - `cmake >= 3.17`, `ninja`, `git`, `jq`
 - CUDA toolkit with `nvcc`
+- OpenSSL development files (for HTTPS model downloads)
+  - Ubuntu/Debian: `sudo apt install libssl-dev`
+  - RHEL/CentOS: `sudo yum install openssl-devel`
 
 **For CI builds:**
 - A GitHub account (free tier works — Actions minutes are consumed)

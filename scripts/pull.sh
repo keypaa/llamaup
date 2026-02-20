@@ -418,7 +418,22 @@ main() {
 
   echo
   success "Installed to: ${versioned_dir}"
-  echo -e "  Add to your PATH: export PATH=\"\$(dirname \"$install_dir\"):\$PATH\""
+  echo
+  echo -e "  ${BOLD}Next steps:${RESET}"
+  echo -e "    1. Add to PATH: ${CYAN}export PATH=\"\$(dirname \"$install_dir\"):\$PATH\"${RESET}"
+  echo -e "    2. Run with auto-download: ${CYAN}llama-cli -hf bartowski/Qwen2.5-7B-Instruct-GGUF:Q4_K_M -cnv${RESET}"
+  echo
+  echo -e "  ${BOLD}Available tools:${RESET}"
+  echo -e "    llama-cli --help                    # Command-line inference (see --help for all flags)"
+  echo -e "    llama-server -m model.gguf          # Start HTTP API server (recommended for chat)"
+  echo -e "    llama-bench -m model.gguf           # Benchmark performance"
+  echo
+  echo -e "  ${BOLD}Quick examples:${RESET}"
+  echo -e "    llama-cli -hf user/repo:Q4_K_M -cnv             # Auto-download + interactive chat"
+  echo -e "    llama-cli -m model.gguf -p \"Hello!\" -n 512     # One-shot prompt"
+  echo -e "    llama-server -m model.gguf -c 8192 --port 8080  # Start web UI + API"
+  echo
+  echo -e "  See README.md for full usage guide: ${CYAN}https://github.com/${github_repo}#using-llamacpp-quick-reference${RESET}"
   echo
 }
 
