@@ -16,6 +16,8 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
+INSTALL_DEPS=false
+
 # ---------------------------------------------------------------------------
 # usage — print CLI help and exit 0
 # ---------------------------------------------------------------------------
@@ -30,6 +32,7 @@ Options:
   --json          Output as JSON instead of human-readable text
   --gpu-map PATH  Path to gpu_map.json
                   (default: ${SCRIPT_DIR}/../configs/gpu_map.json)
+  --install-deps   Attempt to install missing tools (jq) automatically
   -h, --help      Show this help
 
 Examples:
@@ -68,11 +71,68 @@ check_deps() {
   command -v jq         >/dev/null 2>&1 || missing+=("jq")
 
   if [[ ${#missing[@]} -gt 0 ]]; then
-    echo -e "${RED}Error: missing required tools: ${missing[*]}${RESET}" >&2
-    echo "  → Install nvidia-smi by installing the NVIDIA driver." >&2
-    echo "  → Install jq: https://jqlang.org/download/" >&2
-    exit 1
+    if [[ "$INSTALL_DEPS" == "true" ]]; then
+      install_deps "${missing[@]}"
+      # Recompute missing after attempt
+      missing=()
+      command -v nvidia-smi >/dev/null 2>&1 || missing+=("nvidia-smi")
+      command -v jq         >/dev/null 2>&1 || missing+=("jq")
+      if [[ ${#missing[@]} -gt 0 ]]; then
+        echo -e "${RED}Error: still missing required tools after install attempt: ${missing[*]}${RESET}" >&2
+        echo "  → Install nvidia-smi by installing the NVIDIA driver." >&2
+        echo "  → Install jq: https://jqlang.org/download/" >&2
+        exit 1
+      fi
+    else
+      echo -e "${RED}Error: missing required tools: ${missing[*]}${RESET}" >&2
+      echo "  → Install nvidia-smi by installing the NVIDIA driver." >&2
+      echo "  → Install jq: https://jqlang.org/download/" >&2
+      exit 1
+    fi
   fi
+}
+
+
+# ---------------------------------------------------------------------------
+# install_deps — attempt to install missing tools (best-effort)
+# Args: list of missing tools (e.g. jq nvidia-smi)
+# ---------------------------------------------------------------------------
+install_deps() {
+  local pkgs=("$@")
+
+  for pkg in "${pkgs[@]}"; do
+    case "$pkg" in
+      jq)
+        echo "Installing jq..."
+        if command -v apt-get >/dev/null 2>&1; then
+          sudo apt-get update && sudo apt-get install -y jq && continue
+        elif command -v dnf >/dev/null 2>&1; then
+          sudo dnf install -y jq && continue
+        elif command -v pacman >/dev/null 2>&1; then
+          sudo pacman -Syu --noconfirm jq && continue
+        elif command -v apk >/dev/null 2>&1; then
+          sudo apk add jq && continue
+        elif command -v brew >/dev/null 2>&1; then
+          brew install jq && continue
+        elif command -v choco >/dev/null 2>&1; then
+          choco install jq -y && continue
+        else
+          echo "No supported package manager found — installing jq binary to /usr/local/bin"
+          sudo curl -L -o /usr/local/bin/jq https://github.com/stedolan/jq/releases/download/jq-1.6/jq-linux64 || true
+          sudo chmod +x /usr/local/bin/jq || true
+          continue
+        fi
+        ;;
+      nvidia-smi)
+        echo "nvidia-smi depends on the NVIDIA driver and cannot be installed automatically."
+        echo "Please install the appropriate NVIDIA driver for your OS or follow your cloud provider's guide."
+        echo "Ubuntu example: sudo apt-get install -y ubuntu-drivers-common && sudo ubuntu-drivers autoinstall (reboot may be required)"
+        ;;
+      *)
+        echo "Don't know how to install '$pkg' automatically. Please install it manually."
+        ;;
+    esac
+  done
 }
 
 # ---------------------------------------------------------------------------
@@ -189,6 +249,7 @@ main() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --json)      output_json=true ; shift ;;
+      --install-deps) INSTALL_DEPS=true ; shift ;;
       --gpu-map)   gpu_map="$2"     ; shift 2 ;;
       -h|--help)   usage ;;
       *)           error "Unknown option: $1. Run with --help for usage." ;;
