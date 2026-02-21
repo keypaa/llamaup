@@ -4,6 +4,9 @@
 
 No more compiling on every machine. Build once per SM version, store the binary, pull it anywhere in seconds.
 
+
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/keypaa/llamaup)
+
 ---
 
 ## The problem
