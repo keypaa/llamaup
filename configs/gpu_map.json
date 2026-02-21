@@ -1,6 +1,6 @@
 {
   "_comment": "Maps GPU model name substrings (from nvidia-smi) to CUDA SM versions.",
-  "_note": "Matching is case-insensitive substring search. Order matters — more specific entries should come first within a family.",
+  "_note": "Matching is case-insensitive substring search using 'longest match' strategy. More specific patterns (longer substrings) always win, so order within a family doesn't matter. See docs/GPU_MATCHING.md for details.",
   "gpu_families": {
     "sm_75": {
       "sm": "75",
