@@ -11,14 +11,23 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/detect.sh"
 
 # ---------------------------------------------------------------------------
-# Colour constants (re-declared because sourcing detect.sh may not export them)
+# Colour constants (only if stdout is a TTY)
 # ---------------------------------------------------------------------------
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-RESET='\033[0m'
+if [[ -t 1 ]]; then
+  RED='\033[0;31m'
+  GREEN='\033[0;32m'
+  YELLOW='\033[1;33m'
+  CYAN='\033[0;36m'
+  BOLD='\033[1m'
+  RESET='\033[0m'
+else
+  RED=''
+  GREEN=''
+  YELLOW=''
+  CYAN=''
+  BOLD=''
+  RESET=''
+fi
 
 # ---------------------------------------------------------------------------
 # Defaults
@@ -75,6 +84,45 @@ error() {
 info()    { echo -e "${CYAN}→ $1${RESET}"; }
 success() { echo -e "${GREEN}✓ $1${RESET}"; }
 warn()    { echo -e "${YELLOW}⚠ $1${RESET}" >&2; }
+
+# ---------------------------------------------------------------------------
+# verify_archive — verify that an archive is valid and matches its SHA256
+# Args: $1 = archive_path (path to .tar.gz file)
+# Returns: 0 if valid, 1 if invalid or corrupt
+# Does NOT exit — caller decides what to do
+# ---------------------------------------------------------------------------
+verify_archive() {
+  local archive_path="$1"
+  local sha256_path="${archive_path}.sha256"
+
+  # Check 1: File must not be empty
+  if [[ ! -s "$archive_path" ]]; then
+    warn "Archive exists but is empty: ${archive_path}"
+    return 1
+  fi
+
+  # Check 2: Must be a valid tarball
+  if ! tar -tzf "$archive_path" >/dev/null 2>&1; then
+    warn "Archive exists but is corrupt or not a valid tarball: ${archive_path}"
+    return 1
+  fi
+
+  # Check 3: Verify SHA256 if .sha256 file exists
+  if [[ -f "$sha256_path" ]]; then
+    local expected_hash actual_hash
+    expected_hash=$(awk '{print $1}' "$sha256_path")
+    actual_hash=$(sha256sum "$archive_path" | awk '{print $1}')
+
+    if [[ "$expected_hash" != "$actual_hash" ]]; then
+      warn "Archive SHA256 mismatch:"
+      warn "  Expected: ${expected_hash}"
+      warn "  Actual:   ${actual_hash}"
+      return 1
+    fi
+  fi
+
+  return 0
+}
 
 # ---------------------------------------------------------------------------
 # check_deps — verify all required tools are present
@@ -145,6 +193,21 @@ verify_version_exists() {
   if [[ "$http_status" != "200" ]]; then
     error "llama.cpp release tag '${tag}' not found on GitHub (HTTP ${http_status}).\n  → Check available tags at: https://github.com/ggerganov/llama.cpp/releases"
   fi
+}
+
+# ---------------------------------------------------------------------------
+# validate_sm — verify that an SM version exists in gpu_map.json
+# Args: $1 = sm_version (e.g. "89"), $2 = path to gpu_map.json
+# Returns: 0 if valid, 1 if invalid
+# ---------------------------------------------------------------------------
+validate_sm() {
+  local sm="$1"
+  local gpu_map="$2"
+  
+  if ! jq -e --arg sm "$sm" '.gpu_families | to_entries[] | select(.value.sm == $sm)' "$gpu_map" >/dev/null 2>&1; then
+    return 1
+  fi
+  return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -234,7 +297,7 @@ build() {
     -DCMAKE_INSTALL_PREFIX="$install_dir" \
     -DLLAMA_CURL=ON \
     -G Ninja \
-    2>&1 || error "cmake configure failed.\n  → Check that CUDA toolkit is installed and nvcc is in PATH.\n  → OpenSSL dev files required for HTTPS: apt install libssl-dev (Debian/Ubuntu) or yum install openssl-devel (RHEL/CentOS)\n  → Try: nvcc --version"
+    2>&1 || error "cmake configure failed.\n  → Check that CUDA toolkit is installed and nvcc is in PATH.\n  → OpenSSL dev files required for HTTPS: apt install libssl-dev (Debian/Ubuntu) or yum install openssl-devel (RHEL/CentOS)\n  → libcurl dev files required: apt install libcurl4-openssl-dev (Debian/Ubuntu) or yum install libcurl-devel (RHEL/CentOS)\n  → Try: nvcc --version"
 
   info "Compiling with ${build_jobs} jobs..."
   cmake --build "$build_dir" --parallel "$build_jobs" \
@@ -326,6 +389,20 @@ upload_release() {
 }
 
 # ---------------------------------------------------------------------------
+# cleanup_on_interrupt — remove partial downloads/builds on Ctrl+C
+# ---------------------------------------------------------------------------
+cleanup_on_interrupt() {
+  echo
+  warn "Build interrupted. Cleaning up partial files..."
+  # Remove partial archives if they exist
+  if [[ -n "${CLEANUP_ARCHIVE:-}" ]] && [[ -f "$CLEANUP_ARCHIVE" ]]; then
+    rm -f "$CLEANUP_ARCHIVE" "$CLEANUP_ARCHIVE.sha256"
+    info "Removed partial archive: $CLEANUP_ARCHIVE"
+  fi
+  exit 130
+}
+
+# ---------------------------------------------------------------------------
 # main — orchestrate the full build pipeline
 # ---------------------------------------------------------------------------
 main() {
@@ -340,6 +417,9 @@ main() {
   local src_dir="/tmp/llamaup-src"
   local dry_run=false
   local gpu_map="${SCRIPT_DIR}/../configs/gpu_map.json"
+  
+  # Set up trap for cleanup on interrupt
+  trap cleanup_on_interrupt INT TERM
 
   # --- parse arguments ---
   while [[ $# -gt 0 ]]; do
@@ -410,6 +490,11 @@ main() {
       sm_version=$(detect_sm "$gpu_map")
       info "Detected SM: ${sm_version}"
     fi
+  else
+    # Validate user-provided SM version (always validate, even in dry-run)
+    if ! validate_sm "$sm_version" "$gpu_map"; then
+      error "Invalid SM version: ${sm_version}\n  → Valid SM versions: $(jq -r '.gpu_families | to_entries[] | .value.sm' "$gpu_map" | sort -n | paste -sd, -)\n  → Run ./scripts/detect.sh to see your GPU's SM version"
+    fi
   fi
 
   # --- resolve CUDA version ---
@@ -460,14 +545,21 @@ main() {
     exit 0
   fi
 
-  # --- idempotency check: skip build if archive already exists ---
+  # --- idempotency check: skip build if valid archive already exists ---
   if [[ -f "$archive_path" ]]; then
-    warn "Archive already exists: ${archive_path}"
-    warn "Skipping build. Use a different --output dir or delete the file to rebuild."
-    if [[ "$do_upload" == "true" ]]; then
-      upload_release "$archive_path" "$llama_version" "$github_repo"
+    info "Archive already exists: ${archive_path}"
+    info "Verifying integrity..."
+    
+    if verify_archive "$archive_path"; then
+      success "Archive is valid — skipping build."
+      if [[ "$do_upload" == "true" ]]; then
+        upload_release "$archive_path" "$llama_version" "$github_repo"
+      fi
+      exit 0
+    else
+      warn "Archive verification failed — removing corrupt file and rebuilding..."
+      rm -f "$archive_path" "${archive_path}.sha256"
     fi
-    exit 0
   fi
 
   # --- full build pipeline ---
@@ -476,8 +568,14 @@ main() {
   prepare_source "$llama_version" "$src_dir"
   build "$src_dir" "$sm_version" "$build_jobs" "$install_dir"
 
+  # Set cleanup variable for trap handler
+  CLEANUP_ARCHIVE="$archive_path"
+  
   local created_archive
   created_archive=$(package "$install_dir" "$sm_version" "$llama_version" "$cuda_version" "$output_dir")
+  
+  # Clear cleanup variable after successful package
+  CLEANUP_ARCHIVE=""
 
   if [[ "$do_upload" == "true" ]]; then
     upload_release "$created_archive" "$llama_version" "$github_repo"

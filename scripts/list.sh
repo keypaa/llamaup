@@ -7,14 +7,23 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_DIR
 
 # ---------------------------------------------------------------------------
-# Colour constants
+# Colour constants (only if stdout is a TTY)
 # ---------------------------------------------------------------------------
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-RESET='\033[0m'
+if [[ -t 1 ]]; then
+  RED='\033[0;31m'
+  GREEN='\033[0;32m'
+  YELLOW='\033[1;33m'
+  CYAN='\033[0;36m'
+  BOLD='\033[1m'
+  RESET='\033[0m'
+else
+  RED=''
+  GREEN=''
+  YELLOW=''
+  CYAN=''
+  BOLD=''
+  RESET=''
+fi
 
 # ---------------------------------------------------------------------------
 # usage
@@ -185,8 +194,17 @@ print_release_table() {
     size_mb=$(awk "BEGIN {printf \"%.0f MB\", ${size_bytes}/1048576}")
 
     # Format date: 2025-03-01T14:22:00Z → 2025-03-01 14:22 UTC
+    # More robust than sed: handles both Z and +00:00 timezone formats
     local date_display
-    date_display=$(echo "$published_at" | sed 's/T/ /; s/:[0-9][0-9]Z$/ UTC/')
+    if command -v date >/dev/null 2>&1; then
+      # Try to use date for robust parsing (works on both GNU and BSD date)
+      date_display=$(date -u -d "$published_at" '+%Y-%m-%d %H:%M UTC' 2>/dev/null \
+        || date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$published_at" '+%Y-%m-%d %H:%M UTC' 2>/dev/null \
+        || echo "$published_at" | sed 's/T/ /; s/:[0-9][0-9][Z+].*$/ UTC/')
+    else
+      # Fallback to sed if date command not available
+      date_display=$(echo "$published_at" | sed 's/T/ /; s/:[0-9][0-9][Z+].*$/ UTC/')
+    fi
 
     printf "  %-10s  %-4s  %-24s  %-8s  %-8s  %-19s\n" \
       "$ver" "$sm" "$arch" "$cuda" "$size_mb" "$date_display"

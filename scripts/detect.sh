@@ -7,14 +7,23 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ---------------------------------------------------------------------------
-# Colour constants
+# Colour constants (only if stdout is a TTY)
 # ---------------------------------------------------------------------------
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-RESET='\033[0m'
+if [[ -t 1 ]]; then
+  RED='\033[0;31m'
+  GREEN='\033[0;32m'
+  YELLOW='\033[1;33m'
+  CYAN='\033[0;36m'
+  BOLD='\033[1m'
+  RESET='\033[0m'
+else
+  RED=''
+  GREEN=''
+  YELLOW=''
+  CYAN=''
+  BOLD=''
+  RESET=''
+fi
 
 INSTALL_DEPS=false
 
@@ -154,9 +163,67 @@ get_gpu_names() {
 }
 
 # ---------------------------------------------------------------------------
+# validate_gpu_map — Check for overlapping/ambiguous GPU patterns in gpu_map.json
+# Args:
+#   $1 = gpu_map (path to gpu_map.json)
+# Returns: 0 if valid, prints warnings to stderr for overlaps (does not exit)
+# ---------------------------------------------------------------------------
+validate_gpu_map() {
+  local gpu_map="$1"
+  local has_warnings=0
+
+  # Extract all GPU patterns with their SM versions
+  local -a patterns=()
+  local -a sms=()
+  
+  while IFS='|' read -r sm gpu; do
+    patterns+=("$gpu")
+    sms+=("$sm")
+  done < <(jq -r '
+    .gpu_families | to_entries[] |
+    .value.sm as $sm |
+    .value.gpus[] |
+    "\($sm)|\(.)"
+  ' "$gpu_map")
+
+  # Check for substring overlaps between different SM families
+  local i j
+  for ((i=0; i<${#patterns[@]}; i++)); do
+    local pattern_i="${patterns[$i]}"
+    local sm_i="${sms[$i]}"
+    local pattern_i_lower
+    pattern_i_lower=$(echo "$pattern_i" | tr '[:upper:]' '[:lower:]')
+    
+    for ((j=i+1; j<${#patterns[@]}; j++)); do
+      local pattern_j="${patterns[$j]}"
+      local sm_j="${sms[$j]}"
+      local pattern_j_lower
+      pattern_j_lower=$(echo "$pattern_j" | tr '[:upper:]' '[:lower:]')
+      
+      # Check if one is a substring of the other
+      if [[ "$pattern_i_lower" == *"$pattern_j_lower"* && "$sm_i" != "$sm_j" ]]; then
+        echo -e "${YELLOW}[WARNING]${RESET} GPU pattern overlap detected:" >&2
+        echo -e "  '${BOLD}$pattern_j${RESET}' (SM $sm_j) is a substring of '${BOLD}$pattern_i${RESET}' (SM $sm_i)" >&2
+        echo -e "  This may cause ambiguous matches. Consider using more specific patterns." >&2
+        has_warnings=1
+      elif [[ "$pattern_j_lower" == *"$pattern_i_lower"* && "$sm_i" != "$sm_j" ]]; then
+        echo -e "${YELLOW}[WARNING]${RESET} GPU pattern overlap detected:" >&2
+        echo -e "  '${BOLD}$pattern_i${RESET}' (SM $sm_i) is a substring of '${BOLD}$pattern_j${RESET}' (SM $sm_j)" >&2
+        echo -e "  This may cause ambiguous matches. Consider using more specific patterns." >&2
+        has_warnings=1
+      fi
+    done
+  done
+
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # lookup_sm — look up the SM version for a GPU name in gpu_map.json
 # Uses case-insensitive substring matching: checks if any GPU string in the
 # map is contained within the given GPU name (or vice versa).
+# Uses "longest match" strategy to handle overlapping patterns correctly.
+# For example, "GTX 1650 Super" will match before "GTX 1650" if both are in the map.
 # Args:
 #   $1 = gpu_name  (e.g. "NVIDIA GeForce RTX 4090")
 #   $2 = gpu_map   (path to gpu_map.json)
@@ -169,17 +236,23 @@ lookup_sm() {
   local gpu_name_lower
   gpu_name_lower=$(echo "$gpu_name" | tr '[:upper:]' '[:lower:]')
 
-  # For each GPU entry in the map, check if that entry's name is a substring
-  # of the detected GPU name (case-insensitive). We use jq to flatten all
-  # entries into "sm|gpu_substring" lines, then grep for a match in bash.
-  local sm=""
+  # Collect all matches, then pick the longest (most specific) one.
+  # This ensures that "GTX 1650 Super" matches before "GTX 1650".
+  local best_sm=""
+  local best_match_length=0
+  
   while IFS='|' read -r candidate_sm candidate_gpu; do
     local candidate_lower
     candidate_lower=$(echo "$candidate_gpu" | tr '[:upper:]' '[:lower:]')
+    
     # Check if the map entry is a substring of the detected GPU name
     if [[ "$gpu_name_lower" == *"$candidate_lower"* ]]; then
-      sm="$candidate_sm"
-      break
+      local match_length=${#candidate_lower}
+      # Use the longest matching pattern
+      if (( match_length > best_match_length )); then
+        best_sm="$candidate_sm"
+        best_match_length="$match_length"
+      fi
     fi
   done < <(jq -r '
     .gpu_families | to_entries[] |
@@ -188,7 +261,7 @@ lookup_sm() {
     "\($sm)|\(.)"
   ' "$gpu_map")
 
-  echo "$sm"
+  echo "$best_sm"
 }
 
 # ---------------------------------------------------------------------------
@@ -259,6 +332,11 @@ main() {
   # --- validate gpu_map path ---
   if [[ ! -f "$gpu_map" ]]; then
     error "gpu_map.json not found at: $gpu_map\n  → Use --gpu-map to specify its location."
+  fi
+
+  # --- validate gpu_map for overlapping patterns (only in debug mode or if env var set) ---
+  if [[ "${LLAMA_DEPLOY_DEBUG:-0}" == "1" ]] || [[ "${LLAMA_VALIDATE_GPU_MAP:-0}" == "1" ]]; then
+    validate_gpu_map "$gpu_map"
   fi
 
   check_deps
