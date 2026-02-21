@@ -14,8 +14,12 @@ The official llama.cpp releases ship pre-built Windows CUDA binaries but **nothi
 
 This repo gives you:
 
-- **`scripts/build.sh`** — builds llama.cpp for a specific GPU SM version and uploads the binary to GitHub Releases
 - **`scripts/pull.sh`** — detects your GPU, downloads the right pre-built binary, and installs it
+- **`scripts/build.sh`** — builds llama.cpp for a specific GPU SM version and uploads to GitHub Releases
+- **`scripts/detect.sh`** — diagnostic tool to check your GPU, SM version, CUDA, and driver info
+- **`scripts/list.sh`** — lists all available pre-built binaries in the release store
+- **`scripts/verify.sh`** — verify SHA256 checksums of downloaded binaries
+- **`scripts/cleanup.sh`** — manage and remove old installed llama.cpp versions
 - **`configs/gpu_map.json`** — maps GPU model names → SM versions
 - **`.github/workflows/build.yml`** — CI pipeline that auto-builds all SM versions on new llama.cpp releases
 
@@ -156,6 +160,198 @@ llama-server --help
 llama-bench --help
 ```
 
+### What's included in each binary
+
+Each pre-built archive contains the following binaries:
+
+**Core tools (always included):**
+- `llama-cli` — Command-line inference and chat
+- `llama-server` — HTTP API server with web UI
+- `llama-bench` — Performance benchmarking
+
+**Additional utilities (version-dependent):**
+- `llama-quantize` — Convert and quantize models to GGUF format
+- `llama-embedding` — Generate embeddings for input text
+- `llama-export-lora` — Export LoRA adapters
+- `llama-perplexity` — Calculate perplexity on test data
+- `llama-tokenize` — Tokenize text with a model's tokenizer
+- `llama-gritlm` — GRITLM-specific inference
+- `llama-lookahead` — Experimental lookahead decoding
+- `llama-parallel` — Multi-request parallel inference
+- `llama-simple` — Minimal example binary
+- `llama-speculative` — Speculative decoding
+- `llama-batched-bench` — Batched inference benchmark
+- `llama-retrieval` — RAG/retrieval example
+- `llama-cvector-generator` — Control vector generation
+- `llama-imatrix` — Importance matrix generation for better quantization
+
+The exact set of binaries varies by llama.cpp version. The three core tools (`llama-cli`, `llama-server`, `llama-bench`) are guaranteed to be present and are the primary focus of smoke tests in CI.
+
+---
+
+## Scripts Reference
+
+### `scripts/pull.sh` — Download and install pre-built binaries
+
+The main install tool. Detects your GPU, downloads the matching binary, verifies checksum, and installs.
+
+```bash
+# Basic usage (auto-detects GPU)
+./scripts/pull.sh
+
+# List available binaries for a version
+./scripts/pull.sh --list --version b4102
+
+# Pull specific version and SM
+./scripts/pull.sh --version b4102 --sm 89
+
+# Custom install directory
+./scripts/pull.sh --install-dir /opt/llama
+
+# Dry run (see what would happen)
+./scripts/pull.sh --dry-run
+```
+
+**Options:**
+- `--version <tag>` — llama.cpp release tag (default: latest)
+- `--repo <owner/repo>` — GitHub repo to pull from
+- `--sm <version>` — Override SM auto-detection
+- `--install-dir <dir>` — Installation directory (default: `~/.local/bin/llama`)
+- `--no-verify` — Skip SHA256 verification (not recommended)
+- `--dry-run` — Show what would be downloaded without doing it
+- `--list` — List all available binaries for this version
+- `--force` — Re-download even if already installed
+
+### `scripts/build.sh` — Build and package binaries
+
+Compile llama.cpp from source for a specific SM version and optionally upload to GitHub Releases.
+
+```bash
+# Build for current GPU (auto-detected)
+./scripts/build.sh
+
+# Build for specific SM without uploading
+./scripts/build.sh --sm 89 --version b4102
+
+# Build and upload to releases
+export GITHUB_TOKEN=your_token
+./scripts/build.sh --sm 89 --upload --repo keypaa/llamaup
+
+# Dry run
+./scripts/build.sh --dry-run --sm 89
+```
+
+**Options:**
+- `--sm <version>` — SM version to build for (auto-detected if omitted)
+- `--version <tag>` — llama.cpp release tag (default: latest)
+- `--cuda <version>` — CUDA version string for binary name (auto-detected)
+- `--output <dir>` — Output directory for tarball (default: `./dist`)
+- `--upload` — Upload to GitHub Releases after building
+- `--repo <owner/repo>` — GitHub repo for upload
+- `--jobs <n>` — Parallel build jobs (default: `nproc`)
+- `--src-dir <dir>` — Where to clone llama.cpp (default: `/tmp/llamaup-src`)
+- `--dry-run` — Print plan without executing
+
+### `scripts/detect.sh` — Diagnostic and GPU detection
+
+Reports detailed information about your GPU, SM version, CUDA toolkit, and driver. Used by other scripts for auto-detection and helpful for debugging.
+
+```bash
+# Human-readable report
+./scripts/detect.sh
+
+# JSON output (for scripts)
+./scripts/detect.sh --json
+
+# Validate GPU map for overlapping patterns
+LLAMA_VALIDATE_GPU_MAP=1 ./scripts/detect.sh
+```
+
+**Output includes:**
+- All detected GPUs with their SM versions
+- GPU architecture name
+- Minimum CUDA version required
+- Installed CUDA toolkit version
+- NVIDIA driver version
+
+**Options:**
+- `--json` — Output as JSON instead of human-readable text
+- `--gpu-map <path>` — Path to gpu_map.json (default: auto-detected)
+
+### `scripts/list.sh` — List available binaries
+
+Query GitHub Releases and display available pre-built binaries in a table format.
+
+```bash
+# List latest release binaries
+./scripts/list.sh --repo keypaa/llamaup
+
+# List specific version
+./scripts/list.sh --version b4102
+
+# Show all releases
+./scripts/list.sh --all
+
+# Filter by SM version
+./scripts/list.sh --sm 89
+
+# JSON output
+./scripts/list.sh --json
+```
+
+**Options:**
+- `--repo <owner/repo>` — GitHub repo to query
+- `--version <tag>` — Show only this version (default: latest)
+- `--all` — Show all available releases (last 10)
+- `--sm <version>` — Filter by SM version
+- `--json` — Output as JSON
+
+### `scripts/verify.sh` — Verify file checksums
+
+Standalone SHA256 checksum verifier for downloaded binaries.
+
+```bash
+# Verify with auto-discovered .sha256 file
+./scripts/verify.sh file.tar.gz
+
+# Verify with explicit .sha256 file
+./scripts/verify.sh file.tar.gz file.tar.gz.sha256
+
+# Verify with SHA256 from URL
+./scripts/verify.sh file.tar.gz https://example.com/file.tar.gz.sha256
+
+# Verify with raw hash string
+./scripts/verify.sh file.tar.gz 1234567890abcdef...
+```
+
+**Arguments:**
+- `<file>` — Path to file to verify
+- `[sha256-source]` — .sha256 file path, URL, or raw hash (auto-discovered if omitted)
+
+### `scripts/cleanup.sh` — Manage installed versions
+
+List and remove old installed llama.cpp versions to save disk space.
+
+```bash
+# Interactive mode (prompts for each version)
+./scripts/cleanup.sh
+
+# Keep 2 most recent versions, remove rest
+./scripts/cleanup.sh --keep 2
+
+# Remove all versions (with confirmation)
+./scripts/cleanup.sh --all
+
+# Dry run (see what would be removed)
+./scripts/cleanup.sh --dry-run --keep 1
+```
+
+**Options:**
+- `--install-dir <dir>` — Installation root (default: `~/.local/bin/llama`)
+- `--keep <n>` — Keep N most recent versions, remove rest
+- `--all` — Remove all installed versions (prompts for confirmation)
+- `--dry-run` — Show what would be removed without removing
+
 ---
 
 ## GPU → SM version map
@@ -273,7 +469,7 @@ You can also trigger a build manually from the Actions tab with a specific versi
 llama-{version}-linux-cuda{cuda_ver}-sm{sm}-x64.tar.gz
 
 Examples:
-  llama-b4102-linux-cuda12.4-sm89-x64.tar.gz   ← for 4090, L40S
+  llama-b4102-linux-cuda12.8-sm89-x64.tar.gz   ← for 4090, L40S
   llama-b4102-linux-cuda12.4-sm80-x64.tar.gz   ← for A100
   llama-b4102-linux-cuda12.6-sm100-x64.tar.gz  ← for H100, RTX PRO 6000
 ```
@@ -313,7 +509,26 @@ Each archive contains the full llama.cpp install tree (binaries, libraries). A c
 
 ## Contributing
 
-GPU map out of date? New SM version missing? PRs to `configs/gpu_map.json` are welcome.
+We welcome contributions! Whether you're fixing a GPU mapping, adding support for a new GPU, or improving the scripts, your help is appreciated.
+
+**Quick links:**
+- [CONTRIBUTING.md](CONTRIBUTING.md) — Contribution guidelines (GPU mappings, binaries, code)
+- [TESTING.md](TESTING.md) — Testing guide and development workflows
+- [GPU_MATCHING.md](docs/GPU_MATCHING.md) — How GPU substring matching works
+
+**Common contributions:**
+- Update `configs/gpu_map.json` with new or corrected GPU entries
+- Build and upload binaries for SM versions not yet in releases
+- Improve documentation or fix typos
+- Add test cases or improve existing scripts
+
+Before submitting a PR:
+1. Run `shellcheck scripts/*.sh` (must pass with zero warnings)
+2. Run automated tests: `./scripts/test_gpu_matching.sh` and `./scripts/test_archive_integrity.sh`
+3. Test on real hardware if possible
+4. Update documentation as needed
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed instructions.
 
 ---
 
