@@ -33,10 +33,27 @@ permissions:
   contents: write
 
 # ---------------------------------------------------------------------------
-# Job 1: resolve-version
-# Determines the exact llama.cpp tag to build and whether it's already built.
+# Jobs
 # ---------------------------------------------------------------------------
 jobs:
+  # ---------------------------------------------------------------------------
+  # Job 0: lint
+  # Runs shellcheck on all scripts to enforce code quality.
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run shellcheck
+        run: shellcheck scripts/*.sh
+
+  # ---------------------------------------------------------------------------
+  # Job 1: resolve-version
+  # Determines the exact llama.cpp tag to build and whether it's already built.
+  # ---------------------------------------------------------------------------
   resolve-version:
     name: Resolve version
     runs-on: ubuntu-latest
@@ -114,7 +131,7 @@ jobs:
   # ---------------------------------------------------------------------------
   build:
     name: Build SM ${{ matrix.sm }} (CUDA ${{ matrix.cuda_image }})
-    needs: resolve-version
+    needs: [lint, resolve-version]
     if: needs.resolve-version.outputs.already_built == 'false'
     runs-on: ubuntu-latest
 
@@ -124,7 +141,7 @@ jobs:
         include: ${{ fromJson(needs.resolve-version.outputs.sm_matrix) }}
 
     container:
-      image: nvidia/cuda:${{ matrix.cuda_image }}-devel-ubuntu22.04
+      image: nvidia/cuda:${{ matrix.cuda_image }}-devel-ubuntu20.04
 
     defaults:
       run:
@@ -138,7 +155,7 @@ jobs:
         run: |
           apt-get update -qq
           apt-get install -y --no-install-recommends \
-            cmake ninja-build git jq curl ca-certificates libssl-dev
+            cmake ninja-build git jq curl ca-certificates libssl-dev libcurl4-openssl-dev
 
       - name: Restore llama.cpp source cache
         id: cache-src
@@ -234,7 +251,7 @@ jobs:
         include: ${{ fromJson(needs.resolve-version.outputs.sm_matrix) }}
 
     container:
-      image: nvidia/cuda:${{ matrix.cuda_image }}-runtime-ubuntu22.04
+      image: nvidia/cuda:${{ matrix.cuda_image }}-runtime-ubuntu20.04
 
     defaults:
       run:
@@ -268,7 +285,25 @@ jobs:
             exit 1
           fi
 
-          echo "Smoke test passed: $OUTPUT"
+          echo "Binary version output:"
+          echo "$OUTPUT"
+          echo ""
+
+          # Verify CUDA backend is present
+          # llama.cpp typically shows build info including "CUDA" or "GGML_CUDA" in --version output
+          if ! echo "$OUTPUT" | grep -qi "cuda"; then
+            echo "ERROR: CUDA backend not found in binary" >&2
+            echo "Expected CUDA support but it's missing from the build" >&2
+            exit 1
+          fi
+
+          # Also verify the binary can show help (another smoke test)
+          if ! "$BINARY" --help >/dev/null 2>&1; then
+            echo "ERROR: llama-cli --help failed" >&2
+            exit 1
+          fi
+
+          echo "✓ Smoke test passed: binary runs and CUDA backend is present"
 
   # ---------------------------------------------------------------------------
   # Job 4: release
