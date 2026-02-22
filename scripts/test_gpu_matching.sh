@@ -14,12 +14,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/detect.sh
 source "${SCRIPT_DIR}/detect.sh"
 
 # Colors for output
 GREEN='\033[0;32m'
 RED='\033[0;31m'
-YELLOW='\033[1;33m'
 RESET='\033[0m'
 
 GPU_MAP="${SCRIPT_DIR}/../configs/gpu_map.json"

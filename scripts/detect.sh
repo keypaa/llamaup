@@ -205,12 +205,10 @@ validate_gpu_map() {
         echo -e "${YELLOW}[WARNING]${RESET} GPU pattern overlap detected:" >&2
         echo -e "  '${BOLD}$pattern_j${RESET}' (SM $sm_j) is a substring of '${BOLD}$pattern_i${RESET}' (SM $sm_i)" >&2
         echo -e "  This may cause ambiguous matches. Consider using more specific patterns." >&2
-        has_warnings=1
       elif [[ "$pattern_j_lower" == *"$pattern_i_lower"* && "$sm_i" != "$sm_j" ]]; then
         echo -e "${YELLOW}[WARNING]${RESET} GPU pattern overlap detected:" >&2
         echo -e "  '${BOLD}$pattern_i${RESET}' (SM $sm_i) is a substring of '${BOLD}$pattern_j${RESET}' (SM $sm_j)" >&2
         echo -e "  This may cause ambiguous matches. Consider using more specific patterns." >&2
-        has_warnings=1
       fi
     done
   done

@@ -17,7 +17,10 @@
 #
 set -euo pipefail
 
+# shellcheck disable=SC2317  # Functions below are called by main(), false positive
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC2034  # SCRIPT_DIR reserved for future use
 
 # Colour constants
 RED='\033[0;31m'
@@ -145,7 +148,7 @@ test_valid_archive_no_sha256() {
   local result=$?
   
   rm -rf test-content "$archive"
-  return $result
+  return "$result"
 }
 
 test_valid_archive_with_correct_sha256() {
@@ -164,7 +167,7 @@ test_valid_archive_with_correct_sha256() {
   local result=$?
   
   rm -rf test-content "$archive" "${archive}.sha256"
-  return $result
+  return "$result"
 }
 
 test_empty_archive() {

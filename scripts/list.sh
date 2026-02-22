@@ -11,14 +11,12 @@ readonly SCRIPT_DIR
 # ---------------------------------------------------------------------------
 if [[ -t 1 ]]; then
   RED='\033[0;31m'
-  GREEN='\033[0;32m'
   YELLOW='\033[1;33m'
   CYAN='\033[0;36m'
   BOLD='\033[1m'
   RESET='\033[0m'
 else
   RED=''
-  GREEN=''
   YELLOW=''
   CYAN=''
   BOLD=''
@@ -167,7 +165,7 @@ print_release_table() {
 
   local gpu_map="${SCRIPT_DIR}/../configs/gpu_map.json"
 
-  while IFS='|' read -r rel_tag asset_name size_bytes published_at; do
+  while IFS='|' read -r _rel_tag asset_name size_bytes published_at; do
     local fields
     fields=$(parse_asset_fields "$asset_name")
     [[ -z "$fields" ]] && continue

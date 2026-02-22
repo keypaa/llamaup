@@ -270,7 +270,8 @@ install_binary() {
       local ld_path_parts=()
       [[ -d "${install_dir}/lib" ]] && ld_path_parts+=("\$INSTALL_DIR/lib")
       [[ -d "${install_dir}/bin" ]] && ld_path_parts+=("\$INSTALL_DIR/bin")
-      local ld_path_str=$(IFS=:; echo "${ld_path_parts[*]}")
+      local ld_path_str
+      ld_path_str=$(IFS=:; echo "${ld_path_parts[*]}")
 
       cat > "$wrapper_path" <<EOF
 #!/usr/bin/env bash

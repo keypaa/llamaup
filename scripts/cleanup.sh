@@ -11,6 +11,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC2034  # SCRIPT_DIR reserved for future use
 
 # ---------------------------------------------------------------------------
 # Colour constants (only if stdout is a TTY)
