@@ -158,7 +158,13 @@ jobs:
         run: |
           apt-get update -qq
           apt-get install -y --no-install-recommends \
-            cmake ninja-build git jq curl ca-certificates libssl-dev libcurl4-openssl-dev
+            wget gnupg software-properties-common git jq curl ca-certificates libssl-dev libcurl4-openssl-dev
+          
+          # Install CMake 3.18+ from Kitware's official repo (Ubuntu 20.04 ships 3.16)
+          wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | apt-key add -
+          apt-add-repository 'deb https://apt.kitware.com/ubuntu/ focal main'
+          apt-get update -qq
+          apt-get install -y --no-install-recommends cmake ninja-build
 
       - name: Restore llama.cpp source cache
         id: cache-src
