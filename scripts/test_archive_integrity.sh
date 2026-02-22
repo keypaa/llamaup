@@ -18,9 +18,8 @@
 set -euo pipefail
 
 # shellcheck disable=SC2317  # Functions below are called by main(), false positive
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC2034  # SCRIPT_DIR reserved for future use
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Colour constants
 RED='\033[0;31m'

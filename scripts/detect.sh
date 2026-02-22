@@ -170,7 +170,6 @@ get_gpu_names() {
 # ---------------------------------------------------------------------------
 validate_gpu_map() {
   local gpu_map="$1"
-  local has_warnings=0
 
   # Extract all GPU patterns with their SM versions
   local -a patterns=()
