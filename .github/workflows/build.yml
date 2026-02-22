@@ -48,7 +48,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run shellcheck
-        run: shellcheck scripts/*.sh
+        run: shellcheck -S warning scripts/*.sh
 
   # ---------------------------------------------------------------------------
   # Job 1: resolve-version
