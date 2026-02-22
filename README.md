@@ -33,8 +33,15 @@ This repo gives you:
 ### On a machine where you want to run llama.cpp
 
 ```bash
+# Install required tools (if not already installed)
+# Ubuntu/Debian: sudo apt install -y curl jq tar
+# RHEL/CentOS: sudo yum install -y curl jq tar
+
 git clone https://github.com/keypaa/llamaup
 cd llamaup
+
+# If scripts aren't executable (e.g., downloaded as ZIP):
+chmod +x scripts/*.sh
 
 # Set the repo that hosts your pre-built binaries
 export LLAMA_DEPLOY_REPO=keypaa/llamaup
@@ -497,16 +504,47 @@ Each archive contains the full llama.cpp install tree (binaries, libraries). A c
 - `curl`, `jq`, `tar` (standard on most Linux distros)
 - `nvidia-smi` (for auto-detection — not needed if you use `--sm`)
 
+**Installing required tools:**
+```bash
+# Ubuntu/Debian
+sudo apt update && sudo apt install -y curl jq tar
+
+# RHEL/CentOS/Fedora
+sudo yum install -y curl jq tar
+
+# Arch Linux
+sudo pacman -S curl jq tar
+
+# macOS (via Homebrew)
+brew install curl jq
+```
+
 **For building locally:**
 - `cmake >= 3.17`, `ninja`, `git`, `jq`
 - CUDA toolkit with `nvcc`
 - OpenSSL development files (for HTTPS model downloads)
-  - Ubuntu/Debian: `sudo apt install libssl-dev`
-  - RHEL/CentOS: `sudo yum install openssl-devel`
+
+```bash
+# Ubuntu/Debian
+sudo apt update && sudo apt install -y cmake ninja-build git jq libssl-dev
+
+# RHEL/CentOS/Fedora
+sudo yum install -y cmake ninja-build git jq openssl-devel
+
+# Arch Linux
+sudo pacman -S cmake ninja git jq openssl
+```
 
 **For CI builds:**
 - A GitHub account (free tier works — Actions minutes are consumed)
 - No GPU hardware needed for the build runners
+
+**Script permissions:**
+- Scripts require execute permissions (`chmod +x scripts/*.sh`)
+- Git clone preserves execute permissions automatically
+- If you downloaded a ZIP archive, run `chmod +x scripts/*.sh` before use
+- **Recommended permission: 755** (owner can write, all can execute)
+- ⚠️ **Never use chmod 777** (security risk — allows anyone to modify scripts)
 
 ---
 

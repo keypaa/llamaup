@@ -14,6 +14,17 @@ to contribute:
 - [GPU_MATCHING.md](docs/GPU_MATCHING.md) — How GPU substring matching works
 - [README.md](README.md) — Main documentation and scripts reference
 
+**Before you start:**
+
+If you cloned via git, scripts should already be executable. If not (e.g., downloaded as ZIP):
+```bash
+chmod +x scripts/*.sh
+```
+
+**Permission best practices:**
+- Use `chmod +x` or `chmod 755` for scripts (owner can modify, all can execute)
+- Never use `chmod 777` — it's a security risk that allows anyone to modify scripts
+
 ---
 
 ## 1. How to add or fix a GPU mapping

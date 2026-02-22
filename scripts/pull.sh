@@ -174,7 +174,7 @@ find_asset() {
 }
 
 # ---------------------------------------------------------------------------
-# download_file — download a URL to a destination path with progress
+# download_file — download a URL to a destination path with tqdm-style progress
 # Args:
 #   $1 = url
 #   $2 = dest_path
@@ -183,14 +183,78 @@ find_asset() {
 download_file() {
   local url="$1"
   local dest_path="$2"
+  local filename
+  filename="$(basename "$dest_path")"
 
-  # -L follows redirects, --progress-bar shows a progress bar,
-  # -o writes to file, -f fails on HTTP errors
-  curl -L --progress-bar -f -o "$dest_path" "$url" || {
-    # Clean up partial download
+  echo -e "${CYAN}Downloading:${RESET} ${filename}"
+
+  # Use curl with custom progress output formatter
+  # Redirect stderr to stdout so we can parse it, redirect original stdout to fd 3
+  local bar_width=30
+  local last_percent=-1
+  local total_size=""
+  
+  {
+    curl -L -f -o "$dest_path" "$url" 2>&1 >&3 | \
+    while IFS= read -r line; do
+      # Parse curl's default progress output
+      # Format: "  45 124M   45 56.0M    0     0  56.9M      0  0:00:02  0:00:01  0:00:01 69.8M"
+      if [[ "$line" =~ ^[[:space:]]*([0-9]+)[[:space:]]+([0-9.]+[kMG]?)[[:space:]]+([0-9]+)[[:space:]]+([0-9.]+[kMG]?) ]]; then
+        local percent="${BASH_REMATCH[1]}"
+        total_size="${BASH_REMATCH[2]}"
+        local downloaded="${BASH_REMATCH[4]}"
+        
+        # Only update if percentage changed (reduce flicker)
+        if [[ "$percent" != "$last_percent" ]]; then
+          last_percent="$percent"
+          
+          # Build tqdm-style progress bar
+          local filled=$((percent * bar_width / 100))
+          local empty=$((bar_width - filled))
+          
+          local bar=""
+          for ((i=0; i<filled; i++)); do bar+="█"; done
+          for ((i=0; i<empty; i++)); do bar+="░"; done
+          
+          # Print tqdm-style progress (overwrite same line)
+          printf "\r${GREEN}%3d%%${RESET}|${CYAN}%s${RESET}| ${BOLD}%s${RESET}/${BOLD}%s${RESET}  " \
+            "$percent" "$bar" "$downloaded" "$total_size"
+        fi
+      fi
+    done
+  } 3>&1
+  
+  local exit_code=$?
+  
+  # If download succeeded, always show 100% completion
+  if [[ $exit_code -eq 0 ]] && [[ -f "$dest_path" ]] && [[ -s "$dest_path" ]]; then
+    # Build 100% bar
+    local bar=""
+    for ((i=0; i<bar_width; i++)); do bar+="█"; done
+    
+    # Get final file size if we didn't get total_size from curl
+    if [[ -z "$total_size" ]]; then
+      local bytes
+      bytes=$(stat -f%z "$dest_path" 2>/dev/null || stat -c%s "$dest_path" 2>/dev/null || echo "0")
+      if [[ "$bytes" -ge 1073741824 ]]; then
+        total_size="$(awk "BEGIN {printf \"%.1fG\", $bytes/1073741824}")"
+      elif [[ "$bytes" -ge 1048576 ]]; then
+        total_size="$(awk "BEGIN {printf \"%.0fM\", $bytes/1048576}")"
+      else
+        total_size="$(awk "BEGIN {printf \"%.0fK\", $bytes/1024}")"
+      fi
+    fi
+    
+    # Print final 100% line
+    printf "\r${GREEN}%3d%%${RESET}|${CYAN}%s${RESET}| ${BOLD}%s${RESET}/${BOLD}%s${RESET}  \n" \
+      "100" "$bar" "$total_size" "$total_size"
+    
+    success "Downloaded ${filename}"
+  else
+    echo  # New line after progress bar
     rm -f "$dest_path"
     error "Download failed from:\n  ${url}\n  → Check your internet connection."
-  }
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -456,7 +520,7 @@ main() {
   # Set cleanup variable for trap handler
   CLEANUP_FILE="$tmp_archive"
   
-  info "Downloading ${asset_name}..."
+  # download_file will print its own progress message
   download_file "$asset_url" "$tmp_archive"
 
   # --- verify checksum ---
