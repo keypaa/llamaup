@@ -260,7 +260,7 @@ jobs:
         include: ${{ fromJson(needs.resolve-version.outputs.sm_matrix) }}
 
     container:
-      image: nvidia/cuda:${{ matrix.cuda_image }}-runtime-ubuntu20.04
+      image: nvidia/cuda:${{ matrix.cuda_image }}-devel-ubuntu20.04 # was runtine instead of devel
 
     defaults:
       run:
