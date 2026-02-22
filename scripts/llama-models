@@ -1,0 +1,568 @@
+#!/usr/bin/env bash
+# llama-models — HuggingFace GGUF model browser and downloader
+#
+# Optional TUI tool for browsing and downloading GGUF models from HuggingFace.
+# Supports two modes:
+#   - Premium: gum TUI + aria2c for fast downloads (opt-in)
+#   - Minimal: bash-native select menu + curl (zero dependencies)
+#
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+readonly MODELS_DIR="${HOME}/.local/share/llama-models"
+readonly HF_API_URL="https://huggingface.co/api/models"
+readonly VERSION="0.1.0"
+
+# Mode will be set by detect_mode()
+MODE=""
+
+# ---------------------------------------------------------------------------
+# Colour constants (only if stdout is a TTY)
+# ---------------------------------------------------------------------------
+if [[ -t 1 ]]; then
+  RED='\033[0;31m'
+  GREEN='\033[0;32m'
+  YELLOW='\033[1;33m'
+  CYAN='\033[0;36m'
+  BLUE='\033[0;34m'
+  MAGENTA='\033[0;35m'
+  BOLD='\033[1m'
+  DIM='\033[2m'
+  RESET='\033[0m'
+else
+  RED=''
+  GREEN=''
+  YELLOW=''
+  CYAN=''
+  BLUE=''
+  MAGENTA=''
+  BOLD=''
+  DIM=''
+  RESET=''
+fi
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+error()   { echo -e "${RED}Error: $1${RESET}" >&2; exit 1; }
+info()    { echo -e "${CYAN}→ $1${RESET}"; }
+success() { echo -e "${GREEN}✓ $1${RESET}"; }
+warn()    { echo -e "${YELLOW}⚠ $1${RESET}" >&2; }
+
+# ---------------------------------------------------------------------------
+# usage — print CLI help and exit 0
+# ---------------------------------------------------------------------------
+usage() {
+  echo -e "${BOLD}llama-models${RESET} v${VERSION} — HuggingFace GGUF Model Browser"
+  echo
+  echo -e "${BOLD}USAGE${RESET}"
+  echo "  llama-models [OPTIONS] [QUERY]"
+  echo
+  echo -e "${BOLD}DESCRIPTION${RESET}"
+  echo "  Browse and download GGUF models from HuggingFace with a beautiful TUI."
+  echo
+  echo "  Two modes available:"
+  echo -e "    ${GREEN}Premium${RESET}: Modern TUI with gum + ultra-fast aria2c downloads (opt-in)"
+  echo -e "    ${BLUE}Minimal${RESET}: Bash-native menu + standard curl (zero dependencies)"
+  echo
+  echo -e "${BOLD}OPTIONS${RESET}"
+  echo "  search <query>     Search for models matching query"
+  echo "  list               List locally downloaded models"
+  echo "  --mode <mode>      Force mode: 'premium' or 'minimal'"
+  echo "  --install-deps     Install premium mode dependencies (gum + aria2c)"
+  echo "  --version          Show version"
+  echo "  -h, --help         Show this help"
+  echo
+  echo -e "${BOLD}EXAMPLES${RESET}"
+  echo "  llama-models                    # Launch interactive browser"
+  echo "  llama-models search qwen        # Search for \"qwen\" models"
+  echo "  llama-models list               # Show downloaded models"
+  echo "  llama-models --install-deps     # Install gum + aria2c"
+  echo
+  echo -e "${BOLD}STORAGE${RESET}"
+  echo "  Models are downloaded to: ${MODELS_DIR}"
+  echo
+  echo -e "${BOLD}MORE INFO${RESET}"
+  echo "  https://github.com/keypaa/llamaup"
+  exit 0
+}
+
+# ---------------------------------------------------------------------------
+# check_dependency — check if a command exists
+# Args: $1 = command name
+# Returns: 0 if exists, 1 if not
+# ---------------------------------------------------------------------------
+check_dependency() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+# ---------------------------------------------------------------------------
+# detect_mode — auto-detect which mode to use
+# Sets the global MODE variable to "premium" or "minimal"
+# ---------------------------------------------------------------------------
+detect_mode() {
+  local has_gum=false
+  local has_aria2c=false
+  
+  check_dependency gum && has_gum=true
+  check_dependency aria2c && has_aria2c=true
+  
+  # Premium mode requires both gum and aria2c
+  if [[ "$has_gum" == "true" ]] && [[ "$has_aria2c" == "true" ]]; then
+    MODE="premium"
+    return 0
+  fi
+  
+  # Check if user wants to install dependencies
+  if [[ "$has_gum" == "false" ]] || [[ "$has_aria2c" == "false" ]]; then
+    offer_installation
+  else
+    MODE="minimal"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# offer_installation — prompt user to install premium dependencies
+# ---------------------------------------------------------------------------
+offer_installation() {
+  echo
+  echo -e "${BOLD}llama-models${RESET} — Enhanced Mode Available"
+  echo
+  echo -e "For the best experience, install optional dependencies:"
+  echo -e "  ${GREEN}•${RESET} ${BOLD}gum${RESET}    — Modern TUI framework"
+  echo -e "  ${GREEN}•${RESET} ${BOLD}aria2c${RESET} — Ultra-fast downloads (16x faster than curl)"
+  echo
+  echo -e "${DIM}Without these, you'll use basic mode (bash menu + curl)${RESET}"
+  echo
+  
+  # Simple bash-native prompt
+  read -p "Install enhanced mode dependencies? [Y/n] " -n 1 -r
+  echo
+  
+  if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
+    install_dependencies
+  else
+    info "Using minimal mode (bash + curl)"
+    MODE="minimal"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# install_dependencies — install gum and aria2c
+# ---------------------------------------------------------------------------
+install_dependencies() {
+  info "Installing dependencies..."
+  
+  local os_type
+  os_type="$(uname -s)"
+  
+  case "$os_type" in
+    Linux)
+      install_linux_dependencies
+      ;;
+    Darwin)
+      install_macos_dependencies
+      ;;
+    *)
+      warn "Unsupported OS: $os_type"
+      warn "Please install manually:"
+      echo "  - gum: https://github.com/charmbracelet/gum"
+      echo "  - aria2c: https://aria2.github.io/"
+      MODE="minimal"
+      return 1
+      ;;
+  esac
+  
+  # Verify installation
+  if check_dependency gum && check_dependency aria2c; then
+    success "Dependencies installed successfully"
+    MODE="premium"
+  else
+    warn "Installation incomplete. Using minimal mode."
+    MODE="minimal"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# install_linux_dependencies — install on Linux
+# ---------------------------------------------------------------------------
+install_linux_dependencies() {
+  # Detect package manager
+  if check_dependency apt; then
+    info "Installing via apt..."
+    sudo apt update && sudo apt install -y aria2
+    install_gum_linux
+  elif check_dependency yum; then
+    info "Installing via yum..."
+    sudo yum install -y aria2
+    install_gum_linux
+  elif check_dependency pacman; then
+    info "Installing via pacman..."
+    sudo pacman -S --noconfirm aria2
+    install_gum_linux
+  else
+    warn "No supported package manager found"
+    return 1
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# install_gum_linux — install gum binary on Linux
+# ---------------------------------------------------------------------------
+install_gum_linux() {
+  local arch
+  arch="$(uname -m)"
+  local gum_url
+  
+  case "$arch" in
+    x86_64)
+      gum_url="https://github.com/charmbracelet/gum/releases/latest/download/gum_Linux_x86_64.tar.gz"
+      ;;
+    aarch64|arm64)
+      gum_url="https://github.com/charmbracelet/gum/releases/latest/download/gum_Linux_arm64.tar.gz"
+      ;;
+    *)
+      warn "Unsupported architecture: $arch"
+      return 1
+      ;;
+  esac
+  
+  info "Downloading gum..."
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  
+  curl -fsSL "$gum_url" -o "$tmp_dir/gum.tar.gz"
+  tar -xzf "$tmp_dir/gum.tar.gz" -C "$tmp_dir"
+  
+  # Install to ~/.local/bin
+  mkdir -p "$HOME/.local/bin"
+  mv "$tmp_dir/gum" "$HOME/.local/bin/gum"
+  chmod +x "$HOME/.local/bin/gum"
+  
+  rm -rf "$tmp_dir"
+  
+  # Add to PATH if not already there
+  if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+    warn "Add ~/.local/bin to your PATH:"
+    echo '  export PATH="$HOME/.local/bin:$PATH"'
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# install_macos_dependencies — install on macOS via Homebrew
+# ---------------------------------------------------------------------------
+install_macos_dependencies() {
+  if ! check_dependency brew; then
+    warn "Homebrew not found. Install from: https://brew.sh"
+    return 1
+  fi
+  
+  info "Installing via Homebrew..."
+  brew install gum aria2
+}
+
+# ===========================================================================
+# PHASE 2: HuggingFace API Integration
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# search_models — query HuggingFace API for GGUF models
+# Args: $1 = search query (optional, searches all if empty)
+#       $2 = limit (optional, default 50)
+# Returns: JSON array of models (via stdout)
+# Exit: 1 on API failure or invalid JSON
+# ---------------------------------------------------------------------------
+search_models() {
+  local query="${1:-}"
+  local limit="${2:-50}"
+  local api_url="${HF_API_URL}"
+  
+  # Build query parameters
+  # CRITICAL: full=true returns siblings array with file metadata
+  local params="limit=${limit}&sort=downloads&direction=-1&full=true"
+  
+  # Add search filter if provided
+  if [[ -n "$query" ]]; then
+    # URL-encode the query (basic: replace spaces with %20)
+    local encoded_query
+    encoded_query=$(echo "$query" | sed 's/ /%20/g')
+    params="${params}&search=${encoded_query}"
+  fi
+  
+  # Filter by gguf tag
+  params="${params}&filter=gguf"
+  
+  info "Searching HuggingFace for GGUF models..."
+  [[ -n "$query" ]] && info "Query: ${BOLD}${query}${RESET}"
+  
+  # Make API request with timeout
+  local response
+  if ! response=$(curl -fsSL --max-time 30 "${api_url}?${params}"); then
+    error "Failed to query HuggingFace API"
+  fi
+  
+  # Validate JSON response
+  if ! echo "$response" | jq empty 2>/dev/null; then
+    error "Invalid JSON response from HuggingFace API"
+  fi
+  
+  echo "$response"
+}
+
+# ---------------------------------------------------------------------------
+# filter_gguf_models — extract only GGUF models from API results
+# Args: $1 = JSON array from search_models
+# Returns: Filtered JSON array with only GGUF models (via stdout)
+# Note: Filters models that have .gguf files in siblings array
+# ---------------------------------------------------------------------------
+filter_gguf_models() {
+  local json="$1"
+  
+  # Filter models that have .gguf files
+  # Look for either:
+  #   - 'gguf' in tags array
+  #   - siblings array contains files ending with .gguf
+  echo "$json" | jq '[.[] | select(
+    (.tags // [] | any(. == "gguf")) or
+    (.siblings // [] | any(.rfilename | endswith(".gguf")))
+  )]'
+}
+
+# ---------------------------------------------------------------------------
+# parse_model_metadata — extract metadata from a single model
+# Args: $1 = model JSON object
+# Returns: pipe-separated string: id|downloads|size|quant_count
+# Example: "TheBloke/Llama-2-7B-GGUF|125000|7.2GiB|8"
+# Note: Calculates size and count from siblings array (available with full=true)
+# ---------------------------------------------------------------------------
+parse_model_metadata() {
+  local model_json="$1"
+  
+  local id downloads total_size quant_count
+  
+  # Extract basic info
+  id=$(echo "$model_json" | jq -r '.id // .modelId // "unknown"')
+  downloads=$(echo "$model_json" | jq -r '.downloads // 0')
+  
+  # Calculate total GGUF size and count from siblings
+  quant_count=$(echo "$model_json" | jq -r '
+    [.siblings // [] | .[] | select(.rfilename | endswith(".gguf"))] | length
+  ')
+  
+  total_size=$(echo "$model_json" | jq -r '
+    [.siblings // [] | .[] | select(.rfilename | endswith(".gguf")) | .size // 0] | add // 0
+  ')
+  
+  # Format size (bytes to human-readable)
+  local size_human
+  if [[ "$total_size" -eq 0 ]]; then
+    size_human="N/A"
+  elif command -v numfmt >/dev/null 2>&1; then
+    size_human=$(numfmt --to=iec-i --suffix=B "$total_size" 2>/dev/null || echo "${total_size}B")
+  else
+    # Fallback: simple GiB conversion using awk
+    size_human=$(awk "BEGIN {printf \"%.1fGiB\", $total_size/1024/1024/1024}")
+  fi
+  
+  # Format downloads with thousands separator
+  local downloads_human
+  if command -v numfmt >/dev/null 2>&1; then
+    downloads_human=$(numfmt --grouping "$downloads" 2>/dev/null || echo "$downloads")
+  else
+    downloads_human="$downloads"
+  fi
+  
+  # Output: id|downloads|size|quant_count
+  echo "${id}|${downloads_human}|${size_human}|${quant_count}"
+}
+
+# ---------------------------------------------------------------------------
+# list_gguf_files — list all GGUF files for a specific model
+# Args: $1 = model JSON object
+# Returns: JSON array of GGUF files with name, size, quant type
+# Note: Extracts quant from filename using comprehensive regex patterns
+# ---------------------------------------------------------------------------
+list_gguf_files() {
+  local model_json="$1"
+  
+  # Extract GGUF files with metadata
+  # Quant detection regex (from filename):
+  #   - Full precision: bf16, f16, f32
+  #   - K-quants: Q8_0, Q6_K, Q5_K_M, Q4_K_S, etc.
+  #   - Legacy: Q5_1, Q4_0, etc.
+  #   - IQuant: IQ4_XS, IQ3_XXS, etc.
+  echo "$model_json" | jq -r '
+    .siblings // [] | 
+    map(select(.rfilename | endswith(".gguf"))) |
+    map({
+      filename: .rfilename,
+      size: .size,
+      quant: (
+        .rfilename | ascii_downcase |
+        if test("bf16") then "BF16"
+        elif test("f32") then "F32"
+        elif test("f16") then "F16"
+        elif test("q8_0") then "Q8_0"
+        elif test("q6_k_l") then "Q6_K_L"
+        elif test("q6_k") then "Q6_K"
+        elif test("q5_k_m") then "Q5_K_M"
+        elif test("q5_k_s") then "Q5_K_S"
+        elif test("q5_1") then "Q5_1"
+        elif test("q5_0") then "Q5_0"
+        elif test("q4_k_m") then "Q4_K_M"
+        elif test("q4_k_s") then "Q4_K_S"
+        elif test("q4_1") then "Q4_1"
+        elif test("q4_0") then "Q4_0"
+        elif test("q3_k_l") then "Q3_K_L"
+        elif test("q3_k_m") then "Q3_K_M"
+        elif test("q3_k_s") then "Q3_K_S"
+        elif test("q2_k") then "Q2_K"
+        elif test("iq4_xs") then "IQ4_XS"
+        elif test("iq4_nl") then "IQ4_NL"
+        elif test("iq3_xxs") then "IQ3_XXS"
+        elif test("iq3_xs") then "IQ3_XS"
+        elif test("iq2_xxs") then "IQ2_XXS"
+        elif test("iq2_xs") then "IQ2_XS"
+        elif test("iq1_s") then "IQ1_S"
+        elif test("mxfp4") then "MXFP4"
+        else "UNKNOWN"
+        end
+      )
+    })
+  '
+}
+
+# ===========================================================================
+# END PHASE 2
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# main — entry point
+# ---------------------------------------------------------------------------
+main() {
+  # Parse arguments
+  local query=""
+  local action="interactive"
+  
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help)
+        usage
+        ;;
+      --version)
+        echo "llama-models v${VERSION}"
+        exit 0
+        ;;
+      --mode)
+        MODE="$2"
+        shift 2
+        ;;
+      --install-deps)
+        install_dependencies
+        exit 0
+        ;;
+      search)
+        action="search"
+        query="$2"
+        shift 2
+        ;;
+      list)
+        action="list"
+        shift
+        ;;
+      *)
+        query="$1"
+        action="search"
+        shift
+        ;;
+    esac
+  done
+  
+  # Detect mode if not forced
+  if [[ -z "$MODE" ]]; then
+    detect_mode
+  fi
+  
+  info "Running in ${BOLD}${MODE}${RESET} mode"
+  
+  # Create models directory
+  mkdir -p "$MODELS_DIR"
+  
+  # Execute action based on mode
+  case "$action" in
+    interactive)
+      if [[ "$MODE" == "premium" ]]; then
+        run_premium_interactive
+      else
+        run_minimal_interactive
+      fi
+      ;;
+    search)
+      if [[ "$MODE" == "premium" ]]; then
+        run_premium_search "$query"
+      else
+        run_minimal_search "$query"
+      fi
+      ;;
+    list)
+      list_local_models
+      ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# Placeholder functions (to be implemented in next phases)
+# ---------------------------------------------------------------------------
+run_premium_interactive() {
+  warn "Premium interactive mode not yet implemented"
+  info "Coming soon: gum-based TUI with fuzzy search"
+}
+
+run_minimal_interactive() {
+  warn "Minimal interactive mode not yet implemented"
+  info "Coming soon: bash select menu"
+}
+
+run_premium_search() {
+  local query="$1"
+  warn "Premium search not yet implemented: $query"
+}
+
+run_minimal_search() {
+  local query="$1"
+  warn "Minimal search not yet implemented: $query"
+}
+
+list_local_models() {
+  info "Listing models in: $MODELS_DIR"
+  
+  if [[ ! -d "$MODELS_DIR" ]] || [[ -z "$(ls -A "$MODELS_DIR" 2>/dev/null)" ]]; then
+    echo "No models downloaded yet."
+    echo
+    echo "Download models with: llama-models search <query>"
+    exit 0
+  fi
+  
+  echo
+  echo -e "${BOLD}Downloaded Models:${RESET}"
+  echo
+  
+  # List all .gguf files
+  find "$MODELS_DIR" -type f -name "*.gguf" -exec ls -lh {} \; | \
+    awk '{printf "  %s  %s\n", $5, $9}' | \
+    sed "s|${MODELS_DIR}/||g"
+  
+  echo
+}
+
+# ---------------------------------------------------------------------------
+# Execute main if script is run directly (not sourced)
+# ---------------------------------------------------------------------------
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
+fi
