@@ -1,7 +1,7 @@
 # llama-models Development Progress
 
 **Last Updated**: February 23, 2026  
-**Current Phase**: Phase 5 In Progress → Advanced Features (Tasks 14-17)
+**Current Phase**: Phase 5 Complete → Advanced Features (Tasks 14-18) ✅
 
 ---
 
@@ -20,8 +20,8 @@
 - ✅ Phase 2: API Integration (Tasks 4-6)
 - ✅ Phase 3: Minimal Mode (Tasks 7-9)
 - ✅ Phase 4: Premium Mode (Tasks 10-13)
-- 🚧 Phase 5: Advanced Features (Tasks 14-18) ← **CURRENT**
-- ⏳ Phase 6: Documentation & Testing (Tasks 19-20)
+- ✅ Phase 5: Advanced Features (Tasks 14-18)
+- 🚧 Phase 6: Documentation & Testing (Tasks 19-20) ← **CURRENT**
 
 ---
 
@@ -427,10 +427,26 @@ MODE=premium ./scripts/llama-models
   - Prevents wasted bandwidth and time
   - Tested with simulated downloads ✓
 
-- [ ] **Task 18**: Update command
-  - Check for newer versions of downloaded models
-  - Show what changed
-  - Selective update
+- [x] **Task 18**: Sync command ✅
+  - Implemented `sync_local_models()` function to check for model updates
+  - Scans all local `metadata.json` files in `~/.local/share/llama-models/`
+  - For each model, fetches current HuggingFace data via API
+  - Detects two types of updates:
+    - **New quantizations**: Available on HF but not downloaded locally (shown in GREEN)
+    - **Size mismatches**: Local file size differs from HF (indicates corrupted/fixed files, shown in YELLOW)
+  - Color-coded reporting:
+    - `✓` Up to date (GREEN)
+    - `+` New quantizations (CYAN)
+    - `!` Size mismatch with local/HF sizes displayed (YELLOW)
+    - `✗` API fetch failed (RED)
+  - Provides actionable help text:
+    - `llama-models search <model-name>` for new quantizations
+    - `llama-models --force search <model-name>` to re-download corrupted files
+  - Added `sync` action to main execution flow
+  - Updated `detect_mode()` to skip installation prompt for sync (like list)
+  - Supports `LLAMA_MODELS_DIR` environment variable for testing
+  - Test coverage: `test_sync_command.sh` (4 tests, all passing)
+  - **Real-world use case**: GGUF files can be corrupted/badly compiled (e.g., gLM 5), requiring re-download detection
 
 ### Phase 6: Documentation & Testing (Tasks 19-20)
 
