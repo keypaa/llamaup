@@ -582,9 +582,62 @@ download_gguf_file() {
 }
 
 # ---------------------------------------------------------------------------
-# format_size — convert bytes to human-readable size
-# Args: $1 = size in bytes
-# Returns: formatted string like "4.2GiB" or "512MiB"
+# download_aria2c_file — download using aria2c for faster multi-connection
+# Args: $1 = model_id (e.g. "bartowski/Llama-3.1-8B-GGUF")
+#       $2 = filename (e.g. "Llama-3.1-8B-Q4_K_M.gguf")
+#       $3 = dest_dir (directory to save to)
+# Returns: 0 on success, 1 on failure
+# Note: Uses aria2c with 16 connections for faster downloads
+# ---------------------------------------------------------------------------
+download_aria2c_file() {
+  local model_id="$1"
+  local filename="$2"
+  local dest_dir="$3"
+  
+  # HuggingFace direct download URL pattern
+  local url="https://huggingface.co/${model_id}/resolve/main/${filename}"
+  local dest_path="${dest_dir}/${filename}"
+  
+  # Create destination directory
+  mkdir -p "$dest_dir"
+  
+  echo
+  info "Downloading: ${BOLD}${filename}${RESET}"
+  info "From: ${model_id}"
+  info "Using aria2c (16 connections)"
+  echo
+  
+  # Download with aria2c
+  # Options:
+  #   -x16: Use 16 connections per server
+  #   -s16: Split into 16 segments
+  #   -j1: Download 1 file at a time
+  #   --file-allocation=none: Don't pre-allocate disk space
+  #   --console-log-level=warn: Reduce verbosity
+  #   --summary-interval=1: Update progress every second
+  #   -d: Download directory
+  #   -o: Output filename
+  if aria2c \
+    -x16 \
+    -s16 \
+    -j1 \
+    --file-allocation=none \
+    --console-log-level=warn \
+    --summary-interval=1 \
+    -d "$dest_dir" \
+    -o "$filename" \
+    "$url"; then
+    
+    echo
+    success "Downloaded to: ${dest_path}"
+    return 0
+  else
+    echo
+    rm -f "$dest_path"
+    error "Download failed from: ${url}"
+  fi
+}
+
 # ---------------------------------------------------------------------------
 # format_size — convert bytes to human-readable size
 # Args: $1 = size in bytes
@@ -903,6 +956,24 @@ show_premium_model_quantizations() {
   fi
 }
 
+# ---------------------------------------------------------------------------
+# run_minimal_interactive — interactive mode with basic prompts
+# ---------------------------------------------------------------------------
+run_minimal_interactive() {
+  echo
+  echo -e "${BOLD}llama-models${RESET} — Interactive Model Browser"
+  echo
+  
+  # Prompt for search query
+  read -p "Enter search query (or press Enter for popular models): " query
+  
+  run_minimal_search "$query"
+}
+
+# ---------------------------------------------------------------------------
+# run_minimal_search — search and select models with bash select menu
+# Args: $1 = search query
+# ---------------------------------------------------------------------------
 run_minimal_search() {
   local query="$1"
   local limit=20
