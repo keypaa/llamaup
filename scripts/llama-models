@@ -74,6 +74,7 @@ usage() {
   echo "  search <query>     Search for models matching query"
   echo "  list               List locally downloaded models"
   echo "  --mode <mode>      Force mode: 'premium' or 'minimal'"
+  echo "  --force            Force re-download even if file exists"
   echo "  --install-deps     Install premium mode dependencies (gum + aria2c)"
   echo "  --version          Show version"
   echo "  -h, --help         Show this help"
@@ -82,6 +83,7 @@ usage() {
   echo "  llama-models                    # Launch interactive browser"
   echo "  llama-models search qwen        # Search for \"qwen\" models"
   echo "  llama-models list               # Show downloaded models"
+  echo "  llama-models --force search qwen # Re-download even if exists"
   echo "  llama-models --install-deps     # Install gum + aria2c"
   echo
   echo -e "${BOLD}STORAGE${RESET}"
@@ -460,6 +462,54 @@ list_gguf_files() {
 # ===========================================================================
 
 # ---------------------------------------------------------------------------
+# check_existing_file — check if file already exists and prompt to overwrite
+# Args: $1 = dest_dir (model directory)
+#       $2 = filename (GGUF filename)
+# Returns: 0 if download should proceed, 1 if should skip
+# Sets: FORCE_DOWNLOAD=true to skip prompt (for --force flag)
+# ---------------------------------------------------------------------------
+check_existing_file() {
+  local dest_dir="$1"
+  local filename="$2"
+  local file_path="${dest_dir}/${filename}"
+  
+  # If file doesn't exist, proceed with download
+  if [[ ! -f "$file_path" ]]; then
+    return 0
+  fi
+  
+  # If FORCE_DOWNLOAD is set, skip prompt and proceed
+  if [[ "${FORCE_DOWNLOAD:-false}" == "true" ]]; then
+    warn "File exists, but --force flag set. Re-downloading..."
+    return 0
+  fi
+  
+  # File exists, get its info
+  local file_size
+  file_size=$(stat -f%z "$file_path" 2>/dev/null || stat -c%s "$file_path" 2>/dev/null || echo "0")
+  local size_human
+  size_human=$(format_size "$file_size")
+  
+  echo
+  warn "File already exists: ${BOLD}${filename}${RESET}"
+  echo "  Location: ${file_path}"
+  echo "  Size: ${size_human}"
+  echo
+  
+  # Prompt user
+  read -p "Re-download this file? [y/N] " -n 1 -r
+  echo
+  
+  if [[ $REPLY =~ ^[Yy]$ ]]; then
+    info "Re-downloading..."
+    return 0
+  else
+    info "Skipping download. File already exists."
+    return 1
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # download_gguf_file — download a GGUF file from HuggingFace with progress
 # Args: $1 = model_id (e.g. "bartowski/Llama-3.1-8B-GGUF")
 #       $2 = filename (e.g. "Llama-3.1-8B-Q4_K_M.gguf")
@@ -478,6 +528,11 @@ download_gguf_file() {
   
   # Create destination directory
   mkdir -p "$dest_dir"
+  
+  # Check if file already exists
+  if ! check_existing_file "$dest_dir" "$filename"; then
+    return 0  # User chose not to re-download
+  fi
   
   echo
   info "Downloading: ${BOLD}${filename}${RESET}"
@@ -612,6 +667,11 @@ download_aria2c_file() {
   
   # Create destination directory
   mkdir -p "$dest_dir"
+  
+  # Check if file already exists
+  if ! check_existing_file "$dest_dir" "$filename"; then
+    return 0  # User chose not to re-download
+  fi
   
   echo
   info "Downloading: ${BOLD}${filename}${RESET}"
@@ -874,6 +934,10 @@ main() {
       --install-deps)
         install_dependencies
         exit 0
+        ;;
+      --force)
+        FORCE_DOWNLOAD=true
+        shift
         ;;
       search)
         action="search"

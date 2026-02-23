@@ -413,10 +413,19 @@ MODE=premium ./scripts/llama-models
   - Note about models without metadata (pre-tracking downloads)
   - Tested with multiple models and quantizations ✓
 
-- [ ] **Task 17**: Install command with version check
-  - Prevent duplicate downloads
-  - Check if model+quant already exists
-  - Option to force re-download
+- [x] **Task 17**: Install command with version check ✅
+  - Implemented `check_existing_file()` function
+  - Checks if file already exists before downloading
+  - Shows file info (location, size) when duplicate detected
+  - Prompts user: "Re-download this file? [y/N]"
+  - Default behavior: skip download if user says no
+  - Added `--force` flag to bypass duplicate check
+  - Integrated into both download methods:
+    - `download_gguf_file()` (curl-based)
+    - `download_aria2c_file()` (aria2c-based)
+  - Updated `--help` documentation with --force flag
+  - Prevents wasted bandwidth and time
+  - Tested with simulated downloads ✓
 
 - [ ] **Task 18**: Update command
   - Check for newer versions of downloaded models
