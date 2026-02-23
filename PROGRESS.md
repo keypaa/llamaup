@@ -386,10 +386,19 @@ MODE=premium ./scripts/llama-models
   - Note: smaller models (< 7B) suffer more from quantization
   - Tested with real HuggingFace models ✓
 
-- [ ] **Task 15**: Local storage in `~/.local/share/llama-models`
-  - Already created directory structure
-  - Organize by model ID: `{model_id}/{filename}`
-  - Add metadata file: `{model_id}/metadata.json` with download date, source URL
+- [x] **Task 15**: Local storage in `~/.local/share/llama-models` ✅
+  - Implemented `save_download_metadata()` function
+  - Creates `{model_id}/metadata.json` after each successful download
+  - Metadata includes:
+    - Download timestamp (ISO 8601 format)
+    - Source URL (HuggingFace)
+    - File size (bytes + human-readable)
+    - Quantization type (auto-detected from filename, case-insensitive)
+    - Quality label (Lossless/Near-Lossless/Recommended/Fast/Lossy/Experimental)
+  - Supports multiple downloads per model (array structure)
+  - Prevents duplicates (updates timestamp if same file re-downloaded)
+  - Used by formula: curl download + aria2c download
+  - Tested with simulated downloads ✓
 
 - [ ] **Task 16**: List command (`llama-models list`)
   - Show locally downloaded models

@@ -665,14 +665,25 @@ save_download_metadata() {
   
   # Get file size
   local file_size=0
+  local file_size_human="N/A"
   if [[ -f "$file_path" ]]; then
     file_size=$(stat -f%z "$file_path" 2>/dev/null || stat -c%s "$file_path" 2>/dev/null || echo "0")
+    file_size_human=$(format_size "$file_size")
   fi
   
-  # Extract quantization from filename
+  # Extract quantization from filename (case-insensitive)
   local quant="unknown"
-  if [[ "$filename" =~ (Q[0-9]_[0-9K_ML]+|F16|BF16|F32|IQ[0-9]_[A-Z]+|MXFP[0-9]) ]]; then
+  local filename_upper="${filename^^}"  # Convert to uppercase for matching
+  if [[ "$filename_upper" =~ (Q[0-9]_[0-9K_ML]+|F16|BF16|F32|IQ[0-9]_[A-Z]+|MXFP[0-9]) ]]; then
     quant="${BASH_REMATCH[1]}"
+  fi
+  
+  # Get quality label for quantization
+  local quant_label="Other"
+  if [[ "$quant" != "unknown" ]]; then
+    local label_result
+    label_result=$(get_quant_label "$quant")
+    quant_label="${label_result%%|*}"
   fi
   
   # Get current timestamp (ISO 8601 format)
@@ -682,20 +693,24 @@ save_download_metadata() {
   # Build metadata JSON
   # If metadata file exists, append to downloads array; otherwise create new
   if [[ -f "$metadata_file" ]]; then
-    # Append to existing downloads
+    # Append to existing downloads (avoid duplicates)
     local temp_file="${metadata_file}.tmp"
     jq --arg date "$download_date" \
        --arg url "$source_url" \
        --arg file "$filename" \
        --argjson size "$file_size" \
+       --arg size_human "$file_size_human" \
        --arg quant "$quant" \
-       '.downloads += [{
+       --arg label "$quant_label" \
+       '.downloads |= (map(select(.filename != $file)) + [{
          downloaded_at: $date,
          filename: $file,
          source_url: $url,
          file_size: $size,
-         quantization: $quant
-       }]' "$metadata_file" > "$temp_file"
+         file_size_human: $size_human,
+         quantization: $quant,
+         quality_label: $label
+       }])' "$metadata_file" > "$temp_file"
     mv "$temp_file" "$metadata_file"
   else
     # Create new metadata file
@@ -709,7 +724,9 @@ save_download_metadata() {
       "filename": "${filename}",
       "source_url": "${source_url}",
       "file_size": ${file_size},
-      "quantization": "${quant}"
+      "file_size_human": "${file_size_human}",
+      "quantization": "${quant}",
+      "quality_label": "${quant_label}"
     }
   ]
 }
