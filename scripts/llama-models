@@ -14,7 +14,7 @@ readonly SCRIPT_DIR
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-readonly MODELS_DIR="${HOME}/.local/share/llama-models"
+readonly MODELS_DIR="${LLAMA_MODELS_DIR:-${HOME}/.local/share/llama-models}"
 readonly HF_API_URL="https://huggingface.co/api/models"
 readonly VERSION="0.1.0"
 
@@ -73,6 +73,7 @@ usage() {
   echo -e "${BOLD}OPTIONS${RESET}"
   echo "  search <query>     Search for models matching query"
   echo "  list               List locally downloaded models"
+  echo "  sync               Check for updates to downloaded models"
   echo "  --mode <mode>      Force mode: 'premium' or 'minimal'"
   echo "  --force            Force re-download even if file exists"
   echo "  --install-deps     Install premium mode dependencies (gum + aria2c)"
@@ -83,6 +84,7 @@ usage() {
   echo "  llama-models                    # Launch interactive browser"
   echo "  llama-models search qwen        # Search for \"qwen\" models"
   echo "  llama-models list               # Show downloaded models"
+  echo "  llama-models sync               # Check for updates"
   echo "  llama-models --force search qwen # Re-download even if exists"
   echo "  llama-models --install-deps     # Install gum + aria2c"
   echo
@@ -106,7 +108,7 @@ check_dependency() {
 # ---------------------------------------------------------------------------
 # detect_mode — auto-detect which mode to use
 # Sets the global MODE variable to "premium" or "minimal"
-# Args: $1 = action (optional: "list" won't trigger installation prompt)
+# Args: $1 = action (optional: "list" or "sync" won't trigger installation prompt)
 # ---------------------------------------------------------------------------
 detect_mode() {
   local action="${1:-}"
@@ -122,8 +124,8 @@ detect_mode() {
     return 0
   fi
   
-  # For list command, don't offer installation (it doesn't need premium deps)
-  if [[ "$action" == "list" ]]; then
+  # For list/sync commands, don't offer installation (they don't need premium deps)
+  if [[ "$action" == "list" ]] || [[ "$action" == "sync" ]]; then
     MODE="minimal"
     return 0
   fi
@@ -948,6 +950,10 @@ main() {
         action="list"
         shift
         ;;
+      sync)
+        action="sync"
+        shift
+        ;;
       *)
         query="$1"
         action="search"
@@ -961,8 +967,8 @@ main() {
     detect_mode "$action"
   fi
   
-  # Only show mode info for interactive/search commands
-  if [[ "$action" != "list" ]]; then
+  # Only show mode info for interactive/search commands (skip for list and sync)
+  if [[ "$action" != "list" ]] && [[ "$action" != "sync" ]]; then
     info "Running in ${BOLD}${MODE}${RESET} mode"
   fi
   
@@ -987,6 +993,9 @@ main() {
       ;;
     list)
       list_local_models
+      ;;
+    sync)
+      sync_local_models
       ;;
   esac
 }
@@ -1557,6 +1566,132 @@ list_local_models() {
     echo
     echo -e "${DIM}Note: Models downloaded before metadata tracking won't appear here.${RESET}"
     echo -e "${DIM}Re-download to generate metadata.${RESET}"
+  fi
+  
+  echo
+}
+
+# ---------------------------------------------------------------------------
+# sync_local_models — check for updates to downloaded models
+# Compares local files against HuggingFace to detect:
+#   - New quantizations available
+#   - Files with different sizes (possibly fixed/corrupted)
+# ---------------------------------------------------------------------------
+sync_local_models() {
+  info "Checking for updates in: $MODELS_DIR"
+  
+  if [[ ! -d "$MODELS_DIR" ]] || [[ -z "$(ls -A "$MODELS_DIR" 2>/dev/null)" ]]; then
+    echo "No models downloaded yet."
+    echo
+    echo "Download models with: llama-models search <query>"
+    return 0
+  fi
+  
+  echo
+  echo -e "${BOLD}Checking for Updates${RESET}"
+  echo
+  
+  local found_updates=false
+  
+  # Find all metadata.json files
+  while IFS= read -r -d '' metadata_file; do
+    if [[ ! -f "$metadata_file" ]]; then
+      continue
+    fi
+    
+    local model_id
+    model_id=$(jq -r '.model_id // "unknown"' "$metadata_file")
+    
+    if [[ "$model_id" == "unknown" ]]; then
+      continue
+    fi
+    
+    echo -e "${BOLD}${model_id}${RESET}"
+    
+    # Fetch available files from HuggingFace
+    local hf_data
+    hf_data=$(fetch_model_data "$model_id" 2>/dev/null)
+    
+    if [[ -z "$hf_data" ]]; then
+      echo -e "  ${RED}✗${RESET} Cannot fetch from HuggingFace (repo may be private or deleted)"
+      echo
+      continue
+    fi
+    
+    # Extract GGUF files from HuggingFace
+    local hf_files
+    hf_files=$(echo "$hf_data" | jq -r '.siblings[]? | select(.rfilename | endswith(".gguf")) | .rfilename')
+    
+    if [[ -z "$hf_files" ]]; then
+      echo -e "  ${DIM}No GGUF files found on HuggingFace${RESET}"
+      echo
+      continue
+    fi
+    
+    # Get local files
+    local local_downloads
+    local_downloads=$(jq -r '.downloads[].filename' "$metadata_file")
+    
+    # Check for new quantizations
+    local new_quants=()
+    while IFS= read -r hf_file; do
+      if ! echo "$local_downloads" | grep -q "^${hf_file}$"; then
+        new_quants+=("$hf_file")
+      fi
+    done <<< "$hf_files"
+    
+    # Check for size differences (potentially fixed files)
+    local updated_files=()
+    while IFS= read -r local_file; do
+      # Get local size
+      local local_size
+      local_size=$(jq -r ".downloads[] | select(.filename == \"$local_file\") | .file_size" "$metadata_file")
+      
+      # Get HuggingFace size
+      local hf_size
+      hf_size=$(echo "$hf_data" | jq -r ".siblings[]? | select(.rfilename == \"$local_file\") | .size // 0")
+      
+      if [[ -n "$hf_size" ]] && [[ "$hf_size" != "0" ]] && [[ "$local_size" != "$hf_size" ]]; then
+        updated_files+=("$local_file (local: $(format_size "$local_size"), HF: $(format_size "$hf_size"))")
+      fi
+    done <<< "$local_downloads"
+    
+    # Report findings
+    local has_changes=false
+    
+    if [[ ${#new_quants[@]} -gt 0 ]]; then
+      echo -e "  ${GREEN}New quantizations available:${RESET}"
+      for quant in "${new_quants[@]}"; do
+        echo -e "    ${CYAN}+${RESET} $quant"
+      done
+      has_changes=true
+      found_updates=true
+    fi
+    
+    if [[ ${#updated_files[@]} -gt 0 ]]; then
+      echo -e "  ${YELLOW}Files with size mismatch (possibly fixed/corrupted):${RESET}"
+      for file_info in "${updated_files[@]}"; do
+        echo -e "    ${YELLOW}!${RESET} $file_info"
+      done
+      has_changes=true
+      found_updates=true
+    fi
+    
+    if [[ "$has_changes" == "false" ]]; then
+      echo -e "  ${GREEN}✓${RESET} Up to date"
+    fi
+    
+    echo
+  done < <(find "$MODELS_DIR" -type f -name "metadata.json" -print0)
+  
+  echo
+  
+  if [[ "$found_updates" == "true" ]]; then
+    echo -e "${BOLD}To download updates:${RESET}"
+    echo "  llama-models search <model-name>  # Search and select new quantizations"
+    echo "  llama-models --force search <model-name>  # Re-download to fix corrupted files"
+  else
+    echo -e "${GREEN}All models are up to date!${RESET}"
   fi
   
   echo
