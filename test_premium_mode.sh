@@ -108,7 +108,7 @@ test_mode_detection() {
     info "Test 3: Mode detection should select 'premium'"
     
     # Create a temporary script to check mode detection
-    local temp_script="/tmp/test_mode_$$. sh"
+    local temp_script="/tmp/test_mode_$$.sh"
     cat > "$temp_script" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
