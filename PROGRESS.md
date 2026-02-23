@@ -1,7 +1,7 @@
 # llama-models Development Progress
 
 **Last Updated**: February 23, 2026  
-**Current Phase**: Phase 4 Complete → All premium mode features implemented ✅
+**Current Phase**: Phase 5 In Progress → Advanced Features (Tasks 14-17)
 
 ---
 
@@ -20,8 +20,8 @@
 - ✅ Phase 2: API Integration (Tasks 4-6)
 - ✅ Phase 3: Minimal Mode (Tasks 7-9)
 - ✅ Phase 4: Premium Mode (Tasks 10-13)
-- ⏳ Phase 5: Advanced Features (Tasks 14-17)
-- ⏳ Phase 6: Documentation & Testing (Tasks 18-20)
+- 🚧 Phase 5: Advanced Features (Tasks 14-18) ← **CURRENT**
+- ⏳ Phase 6: Documentation & Testing (Tasks 19-20)
 
 ---
 
@@ -366,52 +366,60 @@ MODE=premium ./scripts/llama-models
 
 ---
 
-### Phase 5: Advanced Features (Tasks 14-17)
+### Phase 5: Advanced Features (Tasks 14-18) 🚧
 
-- [ ] **Task 14**: Quantization labels (best/good/fast/lossy)
-  - Create `get_quant_label()` function
-  - Mapping:
-    - **Best**: F16, BF16, Q8_0
-    - **Balanced**: Q6_K, Q5_K_M, Q5_0
-    - **Fast**: Q4_K_M, Q4_0
-    - **Lossy**: Q3_K_M, Q2_K, IQ3_XXS, IQ2_XXS
-  - Color-code in output (Green=best, Yellow=balanced, Red=lossy)
+**Status**: IN PROGRESS  
+
+- [x] **Task 14**: Quantization labels (best/balanced/fast/lossy) ✅
+  - Created `get_quant_label()` function that classifies quantizations:
+    - **Lossless** (Green): F32, F16, BF16 — no loss, identical to original
+    - **Near-Lossless** (Cyan): Q8_0, Q6_K, Q6_K_L — loss < 0.1%, sweet spot with VRAM
+    - **Recommended** (Yellow): Q5_K_M, Q5_K_S, Q5_1, Q4_K_M — best quality/size tradeoff
+    - **Fast** (Yellow): Q4_K_S, Q4_1, Q4_0, IQ4_XS, IQ4_NL — acceptable for daily work
+    - **Lossy** (Red): Q3_K_L/M/S, Q2_K/Q2_K_L, IQ3_XXS/XS, IQ2_XXS/XS — for limited machines
+    - **Experimental** (Magenta): MXFP4, IQ1_S — very recent or extreme formats
+    - **Other** (Dim): Unknown quantizations
+  - Updated both minimal and premium mode displays
+  - Added "Quality" column to quantization tables
+  - Color-coded labels for easy visual identification
+  - Comprehensive classification based on actual quant behavior
+  - Note: smaller models (< 7B) suffer more from quantization
+  - Tested with real HuggingFace models ✓
 
 - [ ] **Task 15**: Local storage in `~/.local/share/llama-models`
   - Already created directory structure
   - Organize by model ID: `{model_id}/{filename}`
   - Add metadata file: `{model_id}/metadata.json` with download date, source URL
 
-- [ ] **Task 16**: SHA256 verification for downloads
-  - HuggingFace API provides `.siblings[].lfs.sha256` (if available)
-  - Download `.sha256` file from HF if exists
-  - Verify with `sha256sum -c` or manual hash check
-  - Reuse `verify.sh` logic from main llamaup
+- [ ] **Task 16**: List command (`llama-models list`)
+  - Show locally downloaded models
+  - Display: model name, quantization, size, download date
+  - Filter by model or quantization
 
-- [ ] **Task 17**: Resume interrupted downloads
-  - curl: `curl -C -` (continue)
-  - aria2c: built-in resume support
-  - Check if partial file exists before download
-  - Verify integrity after resume
+- [ ] **Task 17**: Install command with version check
+  - Prevent duplicate downloads
+  - Check if model+quant already exists
+  - Option to force re-download
 
-### Phase 6: Documentation & Testing (Tasks 18-20)
+- [ ] **Task 18**: Update command
+  - Check for newer versions of downloaded models
+  - Show what changed
+  - Selective update
 
-- [ ] **Task 18**: Add llama-models docs to README.md
-  - New section: "Optional: Model Browser"
-  - Installation: `./scripts/llama-models --install-deps`
-  - Usage examples
-  - Link to `docs/LLAMA_MODELS.md`
+### Phase 6: Documentation & Testing (Tasks 19-20)
 
 - [ ] **Task 19**: Test minimal mode end-to-end
   - Uninstall gum + aria2c
   - Run full workflow: search → select → download
   - Verify file in `~/.local/share/llama-models/`
+  - Document in README.md
 
 - [ ] **Task 20**: Test premium mode end-to-end
   - Install gum + aria2c
   - Run full workflow with TUI
   - Verify aria2c speed improvement
   - Test multi-select download
+  - Document in README.md
 
 ---
 

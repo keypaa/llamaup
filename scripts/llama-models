@@ -573,6 +573,10 @@ download_gguf_file() {
     
     echo
     success "Downloaded to: ${dest_path}"
+    
+    # Save metadata
+    save_download_metadata "$dest_dir" "$model_id" "$filename" "$url"
+    
     return 0
   else
     echo
@@ -630,12 +634,89 @@ download_aria2c_file() {
     
     echo
     success "Downloaded to: ${dest_path}"
+    
+    # Save metadata
+    save_download_metadata "$dest_dir" "$model_id" "$filename" "$url"
+    
     return 0
   else
     echo
     rm -f "$dest_path"
     error "Download failed from: ${url}"
   fi
+}
+
+# ---------------------------------------------------------------------------
+# save_download_metadata — save metadata JSON for a downloaded model
+# Args: $1 = dest_dir (model directory)
+#       $2 = model_id (HuggingFace model ID)
+#       $3 = filename (GGUF filename)
+#       $4 = source_url (download URL)
+# Creates: {dest_dir}/metadata.json
+# ---------------------------------------------------------------------------
+save_download_metadata() {
+  local dest_dir="$1"
+  local model_id="$2"
+  local filename="$3"
+  local source_url="$4"
+  
+  local metadata_file="${dest_dir}/metadata.json"
+  local file_path="${dest_dir}/${filename}"
+  
+  # Get file size
+  local file_size=0
+  if [[ -f "$file_path" ]]; then
+    file_size=$(stat -f%z "$file_path" 2>/dev/null || stat -c%s "$file_path" 2>/dev/null || echo "0")
+  fi
+  
+  # Extract quantization from filename
+  local quant="unknown"
+  if [[ "$filename" =~ (Q[0-9]_[0-9K_ML]+|F16|BF16|F32|IQ[0-9]_[A-Z]+|MXFP[0-9]) ]]; then
+    quant="${BASH_REMATCH[1]}"
+  fi
+  
+  # Get current timestamp (ISO 8601 format)
+  local download_date
+  download_date=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  
+  # Build metadata JSON
+  # If metadata file exists, append to downloads array; otherwise create new
+  if [[ -f "$metadata_file" ]]; then
+    # Append to existing downloads
+    local temp_file="${metadata_file}.tmp"
+    jq --arg date "$download_date" \
+       --arg url "$source_url" \
+       --arg file "$filename" \
+       --argjson size "$file_size" \
+       --arg quant "$quant" \
+       '.downloads += [{
+         downloaded_at: $date,
+         filename: $file,
+         source_url: $url,
+         file_size: $size,
+         quantization: $quant
+       }]' "$metadata_file" > "$temp_file"
+    mv "$temp_file" "$metadata_file"
+  else
+    # Create new metadata file
+    cat > "$metadata_file" <<EOF
+{
+  "model_id": "${model_id}",
+  "storage_path": "${dest_dir}",
+  "downloads": [
+    {
+      "downloaded_at": "${download_date}",
+      "filename": "${filename}",
+      "source_url": "${source_url}",
+      "file_size": ${file_size},
+      "quantization": "${quant}"
+    }
+  ]
+}
+EOF
+  fi
+  
+  info "Metadata saved: ${metadata_file}"
 }
 
 # ---------------------------------------------------------------------------
@@ -666,6 +747,78 @@ format_size() {
       awk "BEGIN {printf \"%.0fKiB\", $bytes/1024}"
     fi
   fi
+}
+
+# ---------------------------------------------------------------------------
+# get_quant_label — classify quantization quality
+# Args: $1 = quantization string (e.g. "Q4_K_M", "F16")
+# Returns: label|color (e.g. "Lossless|GREEN" or "Lossy|RED")
+# Note: Smaller models suffer more from quantization. On models < 7B, prefer Q6_K minimum.
+# ---------------------------------------------------------------------------
+get_quant_label() {
+  local quant="$1"
+  
+  # Lossless / Full Precision
+  # No loss, identical to original weights. Too large for most local machines.
+  case "$quant" in
+    F32|F16|BF16)
+      echo "Lossless|${GREEN}"
+      return 0
+      ;;
+  esac
+  
+  # Near-Lossless (imperceptible difference)
+  # Quality almost identical to F16, loss < 0.1%. Sweet spot if you have the VRAM.
+  case "$quant" in
+    Q8_0|Q6_K|Q6_K_L)
+      echo "Near-Lossless|${CYAN}"
+      return 0
+      ;;
+  esac
+  
+  # Recommended / Balanced (best quality/size tradeoff)
+  # Where most people land. Q4_K_M is the llama.cpp default recommendation.
+  # Q5_1 is legacy llama.cpp format, still solid.
+  case "$quant" in
+    Q5_K_M|Q5_K_S|Q5_1|Q4_K_M)
+      echo "Recommended|${YELLOW}"
+      return 0
+      ;;
+  esac
+  
+  # Fast / Compressed (noticeable but acceptable loss)
+  # Starts to be perceptible on precise tasks, but usable for daily work.
+  # IQ4 formats use importance matrix for better quality than K-quant equivalents.
+  # Q4_1 is legacy llama.cpp format.
+  case "$quant" in
+    Q4_K_S|Q4_1|Q4_0|IQ4_XS|IQ4_NL)
+      echo "Fast|${YELLOW}"
+      return 0
+      ;;
+  esac
+  
+  # Lossy / Aggressive (significant quality loss)
+  # Reserved for very limited machines. Quality takes a serious hit, especially on small models (< 7B).
+  # Q3_K_M and Q3_K_S have minimal difference, both degrade noticeably.
+  case "$quant" in
+    Q3_K_L|Q3_K_M|Q3_K_S|Q2_K|Q2_K_L|IQ3_XXS|IQ3_XS|IQ2_XXS|IQ2_XS)
+      echo "Lossy|${RED}"
+      return 0
+      ;;
+  esac
+  
+  # Experimental
+  # Very recent or extreme formats. MXFP4 is Microsoft's format for specific NPU/GPU.
+  # IQ1_S is 1-bit quantization, mainly for research.
+  case "$quant" in
+    MXFP4|IQ1_S)
+      echo "Experimental|${MAGENTA}"
+      return 0
+      ;;
+  esac
+  
+  # Unknown/Other
+  echo "Other|${DIM}"
 }
 
 # ===========================================================================
@@ -891,8 +1044,14 @@ show_premium_model_quantizations() {
       size_str="N/A"
     fi
     
-    # Format display line for gum choose
-    printf -v display_line "%-12s  %8s  %s" "$quant" "$size_str" "$filename"
+    # Get quality label
+    local label_info label_text label_color
+    label_info=$(get_quant_label "$quant")
+    IFS='|' read -r label_text label_color <<< "$label_info"
+    
+    # Format display line for gum choose (with color-coded label)
+    printf -v display_line "%-12s  %8s  ${label_color}%-10s${RESET}  %s" \
+      "$quant" "$size_str" "$label_text" "$filename"
     display_lines+=("$display_line")
   done
   
@@ -902,11 +1061,11 @@ show_premium_model_quantizations() {
   echo
   
   # Create table header
-  echo -e "${BOLD}Quantization  Size      Filename${RESET}"
+  echo -e "${BOLD}Quantization  Size      Quality     Filename${RESET}"
   echo "─────────────────────────────────────────────────────────────────────────────"
   
   for display_line in "${display_lines[@]}"; do
-    echo "$display_line"
+    echo -e "$display_line"
   done
   
   echo
@@ -1162,21 +1321,26 @@ show_model_quantizations() {
   # Display quantization options
   echo -e "${BOLD}Available quantizations:${RESET}"
   echo
-  echo -e "${BOLD}#   Quant     Size        Filename${RESET}"
+  echo -e "${BOLD}#   Quant     Size        Quality     Filename${RESET}"
   echo "─────────────────────────────────────────────────────────────────────────────"
   
   for i in "${!filenames[@]}"; do
     local size_human
     size_human=$(format_size "${sizes[i]}")
     
+    # Get quality label
+    local label_info label_text label_color
+    label_info=$(get_quant_label "${quants[i]}")
+    IFS='|' read -r label_text label_color <<< "$label_info"
+    
     # Truncate filename if too long
     local display_name="${filenames[i]}"
-    if [[ ${#display_name} -gt 45 ]]; then
-      display_name="${display_name:0:42}..."
+    if [[ ${#display_name} -gt 35 ]]; then
+      display_name="${display_name:0:32}..."
     fi
     
-    printf "${CYAN}%-3d${RESET} %-9s %-11s %s\n" \
-      "$((i+1))" "${quants[i]}" "$size_human" "$display_name"
+    printf "${CYAN}%-3d${RESET} %-9s %-11s ${label_color}%-10s${RESET} %s\n" \
+      "$((i+1))" "${quants[i]}" "$size_human" "$label_text" "$display_name"
   done
   
   echo
@@ -1242,13 +1406,66 @@ list_local_models() {
   fi
   
   echo
-  echo -e "${BOLD}Downloaded Models:${RESET}"
+  echo -e "${BOLD}Downloaded Models${RESET}"
   echo
+  echo -e "${BOLD}Model ID                                Quant      Size       Downloaded${RESET}"
+  echo "─────────────────────────────────────────────────────────────────────────────"
   
-  # List all .gguf files
-  find "$MODELS_DIR" -type f -name "*.gguf" -exec ls -lh {} \; | \
-    awk '{printf "  %s  %s\n", $5, $9}' | \
-    sed "s|${MODELS_DIR}/||g"
+  # Find all metadata.json files
+  local found=0
+  while IFS= read -r -d '' metadata_file; do
+    if [[ -f "$metadata_file" ]]; then
+      local model_id
+      model_id=$(jq -r '.model_id // "unknown"' "$metadata_file")
+      
+      # Process each download in the metadata
+      local downloads_count
+      downloads_count=$(jq -r '.downloads | length' "$metadata_file")
+      
+      for ((i=0; i<downloads_count; i++)); do
+        local filename quant size downloaded_at
+        filename=$(jq -r ".downloads[$i].filename // \"unknown\"" "$metadata_file")
+        quant=$(jq -r ".downloads[$i].quantization // \"unknown\"" "$metadata_file")
+        size=$(jq -r ".downloads[$i].file_size // 0" "$metadata_file")
+        downloaded_at=$(jq -r ".downloads[$i].downloaded_at // \"unknown\"" "$metadata_file")
+        
+        # Format size
+        local size_human
+        size_human=$(format_size "$size")
+        
+        # Format date (just date, no time)
+        local date_short
+        if [[ "$downloaded_at" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2}) ]]; then
+          date_short="${BASH_REMATCH[1]}"
+        else
+          date_short="$downloaded_at"
+        fi
+        
+        # Truncate model_id if too long
+        local display_model_id="$model_id"
+        if [[ ${#display_model_id} -gt 38 ]]; then
+          display_model_id="${display_model_id:0:35}..."
+        fi
+        
+        # Get quality label
+        local label_info label_text label_color
+        label_info=$(get_quant_label "$quant")
+        IFS='|' read -r label_text label_color <<< "$label_info"
+        
+        printf "%-40s ${label_color}%-10s${RESET} %-10s %s\n" \
+          "$display_model_id" "$quant" "$size_human" "$date_short"
+        
+        found=1
+      done
+    fi
+  done < <(find "$MODELS_DIR" -type f -name "metadata.json" -print0)
+  
+  if [[ $found -eq 0 ]]; then
+    echo "No models with metadata found."
+    echo
+    echo -e "${DIM}Note: Models downloaded before metadata tracking won't appear here.${RESET}"
+    echo -e "${DIM}Re-download to generate metadata.${RESET}"
+  fi
   
   echo
 }
