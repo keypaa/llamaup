@@ -296,6 +296,7 @@ build() {
     -DCMAKE_CUDA_ARCHITECTURES="${sm_version}" \
     -DCMAKE_INSTALL_PREFIX="$install_dir" \
     -DLLAMA_CURL=ON \
+    -DLLAMA_OPENSSL=ON \
     -G Ninja \
     2>&1 || error "cmake configure failed.\n  → Check that CUDA toolkit is installed and nvcc is in PATH.\n  → OpenSSL dev files required for HTTPS: apt install libssl-dev (Debian/Ubuntu) or yum install openssl-devel (RHEL/CentOS)\n  → libcurl dev files required: apt install libcurl4-openssl-dev (Debian/Ubuntu) or yum install libcurl-devel (RHEL/CentOS)\n  → Try: nvcc --version"
 

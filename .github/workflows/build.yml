@@ -207,6 +207,7 @@ jobs:
                 -DCMAKE_CUDA_ARCHITECTURES=${{ matrix.sm }} \
                 -DCMAKE_INSTALL_PREFIX=/tmp/llamaup-install \
                 -DLLAMA_CURL=ON \
+                -DLLAMA_OPENSSL=ON \
                 -G Ninja
 
       - name: cmake build

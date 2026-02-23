@@ -779,14 +779,14 @@ brew install curl jq
 **For building locally:**
 - `cmake >= 3.17`, `ninja`, `git`, `jq`
 - CUDA toolkit with `nvcc`
-- OpenSSL development files (for HTTPS model downloads)
+- OpenSSL and libcurl development files (for HTTPS model downloads)
 
 ```bash
 # Ubuntu/Debian
-sudo apt update && sudo apt install -y cmake ninja-build git jq libssl-dev
+sudo apt update && sudo apt install -y cmake ninja-build git jq libssl-dev libcurl4-openssl-dev
 
 # RHEL/CentOS/Fedora
-sudo yum install -y cmake ninja-build git jq openssl-devel
+sudo yum install -y cmake ninja-build git jq openssl-devel libcurl-devel
 
 # Arch Linux
 sudo pacman -S cmake ninja git jq openssl
@@ -802,6 +802,60 @@ sudo pacman -S cmake ninja git jq openssl
 - If you downloaded a ZIP archive, run `chmod +x scripts/*.sh` before use
 - **Recommended permission: 755** (owner can write, all can execute)
 - ⚠️ **Never use chmod 777** (security risk — allows anyone to modify scripts)
+
+---
+
+## Troubleshooting
+
+### "HTTPS is not supported" error when using `-hf` flag
+
+If you see this error:
+```
+HTTPS is not supported. Please rebuild with one of:
+  -DLLAMA_BUILD_BORINGSSL=ON
+  -DLLAMA_BUILD_LIBRESSL=ON
+  -DLLAMA_OPENSSL=ON
+```
+
+**Cause:** You're using a binary built before HTTPS support was added (pre-Feb 2026 builds).
+
+**Solutions:**
+
+1. **Use a local model file** (workaround until new binaries are available):
+   ```bash
+   # Download model manually
+   wget https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf
+   
+   # Run with local file
+   llama-cli -m Qwen2.5-7B-Instruct-Q4_K_M.gguf -cnv -t 8
+   ```
+
+2. **Rebuild locally** (if you have sudo access):
+   ```bash
+   # Install dependencies
+   sudo apt update && sudo apt install -y libssl-dev libcurl4-openssl-dev cmake ninja-build
+   
+   # Rebuild with HTTPS support
+   ./scripts/build.sh --sm $(./scripts/detect.sh --json | jq -r '.gpus[0].sm')
+   ```
+
+3. **Google Colab users** - download models manually:
+   ```bash
+   # In a Colab cell
+   !wget https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf -O model.gguf
+   !llama-cli -m model.gguf -cnv
+   ```
+
+New binaries with HTTPS support will be available after the next CI run.
+
+### GPU not detected or wrong SM version
+
+Run the diagnostic tool:
+```bash
+./scripts/detect.sh --json
+```
+
+If your GPU is not in the output or has the wrong SM version, see [CONTRIBUTING.md](CONTRIBUTING.md) to add/fix the GPU mapping.
 
 ---
 
