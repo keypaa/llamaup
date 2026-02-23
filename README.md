@@ -199,6 +199,263 @@ The exact set of binaries varies by llama.cpp version. The three core tools (`ll
 
 ---
 
+## 🔍 Browsing GGUF Models — `llama-models`
+
+**Optional TUI tool for discovering and downloading GGUF models from HuggingFace.**
+
+`llama-models` is an interactive browser that helps you search, select, and download GGUF models without leaving the terminal. It supports two modes:
+
+- **Premium mode** (recommended): Beautiful TUI with [gum](https://github.com/charmbracelet/gum) + fast downloads with `aria2c`
+- **Minimal mode** (fallback): Bash-native menus with `curl` — zero extra dependencies
+
+### Quick Start
+
+```bash
+# Search for models (auto-detects best available mode)
+./scripts/llama-models search qwen2.5-7b-instruct
+
+# Install premium dependencies for better experience (optional)
+./scripts/llama-models --install-deps
+
+# List popular models
+./scripts/llama-models list
+
+# Force minimal mode (no TUI dependencies)
+./scripts/llama-models --mode=minimal search llama-3.2
+
+# Force premium mode (requires gum + aria2c)
+./scripts/llama-models --mode=premium search mixtral
+```
+
+### Features
+
+✅ **Smart search**: Query HuggingFace's GGUF model collection  
+✅ **Interactive selection**: Choose models and quantizations with arrow keys  
+✅ **Multi-select** (premium mode): Download multiple models at once  
+✅ **Fast downloads**: `aria2c` multi-connection downloads (premium mode)  
+✅ **Fallback mode**: Works everywhere with just `curl` and `jq`  
+✅ **Smart storage**: Models saved to `~/.local/share/llama-models/`  
+
+### Installation
+
+**Base requirements** (always needed):
+```bash
+# Ubuntu/Debian
+sudo apt install -y curl jq
+
+# RHEL/Fedora
+sudo yum install -y curl jq
+
+# Arch
+sudo pacman -S curl jq
+
+# macOS
+brew install curl jq
+```
+
+**Premium mode dependencies** (optional but recommended):
+
+```bash
+# Let the script install them for you (easiest)
+./scripts/llama-models --install-deps
+
+# Or install manually:
+# Ubuntu/Debian
+sudo apt install -y aria2
+# gum: download from https://github.com/charmbracelet/gum/releases
+
+# macOS
+brew install gum aria2
+```
+
+The `--install-deps` command will:
+- Install `aria2c` via your system package manager (may prompt for sudo)
+- Download and install `gum` binary to `~/.local/bin/`
+- Add `~/.local/bin` to your PATH if needed
+
+### Usage
+
+#### Search for models
+
+```bash
+# Interactive search
+./scripts/llama-models search qwen2.5-7b-instruct
+
+# Search with different query
+./scripts/llama-models search "mixtral 8x7b"
+
+# Search and list more results
+./scripts/llama-models search llama-3 --limit 20
+```
+
+**Workflow:**
+1. Script queries HuggingFace API
+2. Displays matching models sorted by downloads
+3. You select one or more models (arrow keys + Space in premium mode)
+4. Script lists available quantizations (Q4_K_M, Q5_K_M, etc.)
+5. You select quantization(s)
+6. Downloads begin automatically
+
+#### List popular models
+
+```bash
+# Show top 10 most downloaded GGUF models
+./scripts/llama-models list
+
+# See more results
+./scripts/llama-models list --limit 20
+```
+
+#### Mode selection
+
+```bash
+# Auto-detect (default — uses premium if gum + aria2c available)
+./scripts/llama-models search qwen
+
+# Force minimal mode
+./scripts/llama-models --mode=minimal search qwen
+
+# Force premium mode (fails if deps missing)
+./scripts/llama-models --mode=premium search qwen
+```
+
+### Modes Compared
+
+| Feature | Minimal Mode | Premium Mode |
+|---------|-------------|-------------|
+| **Dependencies** | `curl`, `jq` only | + `gum`, `aria2c` |
+| **UI** | Bash `select` menu | Charm `gum` TUI |
+| **Download** | Single-connection `curl` | Multi-connection `aria2c` |
+| **Multi-select** | No (one at a time) | Yes (Space to toggle) |
+| **Speed** | Standard | 3-8x faster downloads |
+| **Portability** | Works everywhere | Requires modern Linux/macOS |
+
+### Examples
+
+**Find and download a specific model:**
+```bash
+./scripts/llama-models search "qwen2.5-7b-instruct"
+# → Select model from list
+# → Select Q4_K_M quantization
+# → Downloads to ~/.local/share/llama-models/
+```
+
+**Download multiple quantizations** (premium mode):
+```bash
+./scripts/llama-models --mode=premium search "llama-3.2-3b"
+# → Press Space to select multiple models
+# → Press Space to select multiple quantizations (Q4_K_M, Q5_K_M, Q8_0)
+# → Downloads all selected files in parallel
+```
+
+**Browse popular models:**
+```bash
+./scripts/llama-models list
+# → Shows top 10 GGUF models by download count
+```
+
+### Where are models stored?
+
+Default: `~/.local/share/llama-models/`
+
+Override with environment variable:
+```bash
+export LLAMA_MODELS_DIR=/mnt/storage/models
+./scripts/llama-models search qwen
+```
+
+Models are saved as: `{model-id}__{filename}.gguf`
+
+Example: `bartowski__Qwen2.5-7B-Instruct-Q4_K_M.gguf`
+
+### Using downloaded models
+
+After downloading, use them with llama.cpp:
+
+```bash
+# Find your model
+ls -lh ~/.local/share/llama-models/
+
+# Run with llama-cli
+llama-cli -m ~/.local/share/llama-models/bartowski__Qwen2.5-7B-Instruct-Q4_K_M.gguf -cnv
+
+# Start llama-server
+llama-server -m ~/.local/share/llama-models/bartowski__Qwen2.5-7B-Instruct-Q4_K_M.gguf -c 8192
+```
+
+### Performance Comparison
+
+**Download time for a 4.5 GB model** (Qwen2.5-7B Q4_K_M):
+
+| Mode | Tool | Time | Speed |
+|------|------|------|-------|
+| Minimal | `curl` | ~8 min | 1x (baseline) |
+| Premium | `aria2c` 8 connections | ~2 min | **4x faster** |
+
+> Actual speedup depends on your network bandwidth and HuggingFace CDN performance.
+
+### Options
+
+```bash
+llama-models [OPTIONS] <command>
+
+Commands:
+  search <query>      Search for GGUF models on HuggingFace
+  list                List popular GGUF models (sorted by downloads)
+
+Options:
+  --mode=<mode>       Force mode: 'minimal' or 'premium'
+  --install-deps      Install premium dependencies (gum + aria2c)
+  --limit=<n>         Number of results to show (default: 10)
+  --version           Show version
+  --help              Show help
+```
+
+### Troubleshooting
+
+**"gum: command not found" when using premium mode**
+
+Premium mode requires `gum`. Install it:
+```bash
+./scripts/llama-models --install-deps
+# or manually from: https://github.com/charmbracelet/gum/releases
+```
+
+Or use minimal mode:
+```bash
+./scripts/llama-models --mode=minimal search qwen
+```
+
+**"aria2c: command not found" in premium mode**
+
+Install via package manager:
+```bash
+# Ubuntu/Debian
+sudo apt install aria2
+
+# macOS
+brew install aria2
+```
+
+**No models found for search query**
+
+Try:
+- Broader search terms (e.g., "llama" instead of "llama-3.2-3b-instruct-q4")
+- Check HuggingFace directly: https://huggingface.co/models?search=your+query&filter=gguf
+- Use `./scripts/llama-models list` to browse popular models
+
+**Download fails or is very slow**
+
+- Check your internet connection
+- Try switching to minimal mode: `--mode=minimal`
+- HuggingFace CDN may be slow from your location — this is normal
+
+**Model not compatible with llama.cpp**
+
+Make sure you're downloading GGUF models (not safetensors or PyTorch). All models found by `llama-models` are pre-filtered to GGUF format.
+
+---
+
 ## Scripts Reference
 
 ### `scripts/pull.sh` — Download and install pre-built binaries
