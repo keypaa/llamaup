@@ -104,8 +104,10 @@ check_dependency() {
 # ---------------------------------------------------------------------------
 # detect_mode — auto-detect which mode to use
 # Sets the global MODE variable to "premium" or "minimal"
+# Args: $1 = action (optional: "list" won't trigger installation prompt)
 # ---------------------------------------------------------------------------
 detect_mode() {
+  local action="${1:-}"
   local has_gum=false
   local has_aria2c=false
   
@@ -118,7 +120,13 @@ detect_mode() {
     return 0
   fi
   
-  # Check if user wants to install dependencies
+  # For list command, don't offer installation (it doesn't need premium deps)
+  if [[ "$action" == "list" ]]; then
+    MODE="minimal"
+    return 0
+  fi
+  
+  # Check if user wants to install dependencies (for interactive/search)
   if [[ "$has_gum" == "false" ]] || [[ "$has_aria2c" == "false" ]]; then
     offer_installation
   else
@@ -886,10 +894,13 @@ main() {
   
   # Detect mode if not forced
   if [[ -z "$MODE" ]]; then
-    detect_mode
+    detect_mode "$action"
   fi
   
-  info "Running in ${BOLD}${MODE}${RESET} mode"
+  # Only show mode info for interactive/search commands
+  if [[ "$action" != "list" ]]; then
+    info "Running in ${BOLD}${MODE}${RESET} mode"
+  fi
   
   # Create models directory
   mkdir -p "$MODELS_DIR"

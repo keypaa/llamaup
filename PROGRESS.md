@@ -400,10 +400,18 @@ MODE=premium ./scripts/llama-models
   - Used by formula: curl download + aria2c download
   - Tested with simulated downloads ✓
 
-- [ ] **Task 16**: List command (`llama-models list`)
-  - Show locally downloaded models
-  - Display: model name, quantization, size, download date
-  - Filter by model or quantization
+- [x] **Task 16**: List command (`llama-models list`) ✅
+  - Implemented `list_local_models()` function
+  - Scans `~/.local/share/llama-models/` for all metadata.json files
+  - Displays table with columns:
+    - Model ID (truncated to 38 chars if too long)
+    - Quant (color-coded by quality label)
+    - Size (human-readable format)
+    - Downloaded (ISO date, short format YYYY-MM-DD)
+  - Supports multiple quantizations per model
+  - Shows helpful message if no models downloaded yet
+  - Note about models without metadata (pre-tracking downloads)
+  - Tested with multiple models and quantizations ✓
 
 - [ ] **Task 17**: Install command with version check
   - Prevent duplicate downloads
