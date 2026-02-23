@@ -50,8 +50,8 @@ fi
 # Helper functions
 # ---------------------------------------------------------------------------
 error()   { echo -e "${RED}Error: $1${RESET}" >&2; exit 1; }
-info()    { echo -e "${CYAN}→ $1${RESET}"; }
-success() { echo -e "${GREEN}✓ $1${RESET}"; }
+info()    { echo -e "${CYAN}→ $1${RESET}" >&2; }
+success() { echo -e "${GREEN}✓ $1${RESET}" >&2; }
 warn()    { echo -e "${YELLOW}⚠ $1${RESET}" >&2; }
 
 # ---------------------------------------------------------------------------
@@ -280,11 +280,17 @@ install_macos_dependencies() {
 search_models() {
   local query="${1:-}"
   local limit="${2:-50}"
+  local skip="${3:-0}"
   local api_url="${HF_API_URL}"
   
   # Build query parameters
   # CRITICAL: full=true returns siblings array with file metadata
   local params="limit=${limit}&sort=downloads&direction=-1&full=true"
+  
+  # Add skip/offset for pagination
+  if [[ "$skip" -gt 0 ]]; then
+    params="${params}&skip=${skip}"
+  fi
   
   # Add search filter if provided
   if [[ -n "$query" ]]; then
@@ -363,7 +369,7 @@ parse_model_metadata() {
   if [[ "$total_size" -eq 0 ]]; then
     size_human="N/A"
   elif command -v numfmt >/dev/null 2>&1; then
-    size_human=$(numfmt --to=iec-i --suffix=B "$total_size" 2>/dev/null || echo "${total_size}B")
+    size_human=$(echo "$total_size" | numfmt --to=iec-i --suffix=B 2>/dev/null || echo "${total_size}B")
   else
     # Fallback: simple GiB conversion using awk
     size_human=$(awk "BEGIN {printf \"%.1fGiB\", $total_size/1024/1024/1024}")
@@ -372,7 +378,7 @@ parse_model_metadata() {
   # Format downloads with thousands separator
   local downloads_human
   if command -v numfmt >/dev/null 2>&1; then
-    downloads_human=$(numfmt --grouping "$downloads" 2>/dev/null || echo "$downloads")
+    downloads_human=$(echo "$downloads" | numfmt --grouping 2>/dev/null || echo "$downloads")
   else
     downloads_human="$downloads"
   fi
@@ -439,6 +445,178 @@ list_gguf_files() {
 
 # ===========================================================================
 # END PHASE 2
+# ===========================================================================
+
+# ===========================================================================
+# PHASE 3: Minimal Mode Implementation
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# download_gguf_file — download a GGUF file from HuggingFace with progress
+# Args: $1 = model_id (e.g. "bartowski/Llama-3.1-8B-GGUF")
+#       $2 = filename (e.g. "Llama-3.1-8B-Q4_K_M.gguf")
+#       $3 = dest_dir (directory to save to)
+# Returns: 0 on success, 1 on failure
+# Note: Uses curl with progress bar, similar to pull.sh download_file()
+# ---------------------------------------------------------------------------
+download_gguf_file() {
+  local model_id="$1"
+  local filename="$2"
+  local dest_dir="$3"
+  
+  # HuggingFace direct download URL pattern
+  local url="https://huggingface.co/${model_id}/resolve/main/${filename}"
+  local dest_path="${dest_dir}/${filename}"
+  
+  # Create destination directory
+  mkdir -p "$dest_dir"
+  
+  echo
+  info "Downloading: ${BOLD}${filename}${RESET}"
+  info "From: ${model_id}"
+  echo
+  
+  # Download with curl and custom progress bar
+  # Strategy: Start curl in background, monitor file size in real-time
+  local bar_width=30
+  
+  # Start download in background, silently
+  curl -L -f -s -o "$dest_path" "$url" &
+  local curl_pid=$!
+  
+  # Monitor progress while curl is running
+  local last_size=0
+  local total_size=0
+  
+  # Try to get total size from Content-Length header
+  total_size=$(curl -sI -L "$url" | grep -i content-length | tail -1 | awk '{print $2}' | tr -d '\r')
+  
+  while kill -0 "$curl_pid" 2>/dev/null; do
+    if [[ -f "$dest_path" ]]; then
+      local current_size
+      current_size=$(stat -f%z "$dest_path" 2>/dev/null || stat -c%s "$dest_path" 2>/dev/null || echo "0")
+      
+      if [[ "$current_size" != "$last_size" ]]; then
+        last_size="$current_size"
+        
+        # Calculate percentage
+        local percent=0
+        if [[ "$total_size" -gt 0 ]]; then
+          percent=$((current_size * 100 / total_size))
+        fi
+        
+        # Build progress bar
+        local filled=$((percent * bar_width / 100))
+        local empty=$((bar_width - filled))
+        
+        local bar=""
+        for ((i=0; i<filled; i++)); do bar+="█"; done
+        for ((i=0; i<empty; i++)); do bar+="░"; done
+        
+        # Format sizes
+        local downloaded_str
+        if [[ "$current_size" -ge 1073741824 ]]; then
+          downloaded_str="$(awk "BEGIN {printf \"%.1fG\", $current_size/1073741824}")"
+        elif [[ "$current_size" -ge 1048576 ]]; then
+          downloaded_str="$(awk "BEGIN {printf \"%.0fM\", $current_size/1048576}")"
+        else
+          downloaded_str="$(awk "BEGIN {printf \"%.0fK\", $current_size/1024}")"
+        fi
+        
+        local total_str=""
+        if [[ "$total_size" -gt 0 ]]; then
+          if [[ "$total_size" -ge 1073741824 ]]; then
+            total_str="$(awk "BEGIN {printf \"%.1fG\", $total_size/1073741824}")"
+          elif [[ "$total_size" -ge 1048576 ]]; then
+            total_str="$(awk "BEGIN {printf \"%.0fM\", $total_size/1048576}")"
+          else
+            total_str="$(awk "BEGIN {printf \"%.0fK\", $total_size/1024}")"
+          fi
+        fi
+        
+        # Display progress
+        if [[ -n "$total_str" ]]; then
+          printf "\r${GREEN}%3d%%${RESET}|${CYAN}%s${RESET}| ${BOLD}%s${RESET}/${BOLD}%s${RESET}  " \
+            "$percent" "$bar" "$downloaded_str" "$total_str"
+        else
+          printf "\r${CYAN}Downloading...${RESET} ${BOLD}%s${RESET}  " "$downloaded_str"
+        fi
+      fi
+    fi
+    sleep 0.5
+  done
+  
+  # Wait for curl to finish and get exit code
+  wait "$curl_pid"
+  
+  local exit_code=$?
+  
+  if [[ $exit_code -eq 0 ]] && [[ -f "$dest_path" ]] && [[ -s "$dest_path" ]]; then
+    # Show 100% completion
+    local bar=""
+    for ((i=0; i<bar_width; i++)); do bar+="█"; done
+    
+    if [[ -z "$total_size" ]]; then
+      local bytes
+      bytes=$(stat -f%z "$dest_path" 2>/dev/null || stat -c%s "$dest_path" 2>/dev/null || echo "0")
+      if [[ "$bytes" -ge 1073741824 ]]; then
+        total_size="$(awk "BEGIN {printf \"%.1fG\", $bytes/1073741824}")"
+      elif [[ "$bytes" -ge 1048576 ]]; then
+        total_size="$(awk "BEGIN {printf \"%.0fM\", $bytes/1048576}")"
+      else
+        total_size="$(awk "BEGIN {printf \"%.0fK\", $bytes/1024}")"
+      fi
+    fi
+    
+    printf "\r${GREEN}%3d%%${RESET}|${CYAN}%s${RESET}| ${BOLD}%s${RESET}/${BOLD}%s${RESET}  \n" \
+      "100" "$bar" "$total_size" "$total_size"
+    
+    echo
+    success "Downloaded to: ${dest_path}"
+    return 0
+  else
+    echo
+    rm -f "$dest_path"
+    error "Download failed from: ${url}"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# format_size — convert bytes to human-readable size
+# Args: $1 = size in bytes
+# Returns: formatted string like "4.2GiB" or "512MiB"
+# ---------------------------------------------------------------------------
+# format_size — convert bytes to human-readable size
+# Args: $1 = size in bytes
+# Returns: formatted string like "4.2GiB" or "512MiB"
+# ---------------------------------------------------------------------------
+format_size() {
+  local bytes="$1"
+  
+  # Handle null, empty, or non-numeric values
+  if [[ -z "$bytes" ]] || [[ "$bytes" == "null" ]] || ! [[ "$bytes" =~ ^[0-9]+$ ]]; then
+    echo "N/A"
+    return 0
+  fi
+  
+  if [[ "$bytes" -eq 0 ]]; then
+    echo "N/A"
+  elif command -v numfmt >/dev/null 2>&1; then
+    numfmt --to=iec-i --suffix=B "$bytes" 2>/dev/null || echo "${bytes}B"
+  else
+    # Fallback: simple conversion using awk
+    if [[ "$bytes" -ge 1073741824 ]]; then
+      awk "BEGIN {printf \"%.1fGiB\", $bytes/1073741824}"
+    elif [[ "$bytes" -ge 1048576 ]]; then
+      awk "BEGIN {printf \"%.0fMiB\", $bytes/1048576}"
+    else
+      awk "BEGIN {printf \"%.0fKiB\", $bytes/1024}"
+    fi
+  fi
+}
+
+# ===========================================================================
+# END PHASE 3
 # ===========================================================================
 
 # ---------------------------------------------------------------------------
@@ -518,24 +696,468 @@ main() {
 # ---------------------------------------------------------------------------
 # Placeholder functions (to be implemented in next phases)
 # ---------------------------------------------------------------------------
+# run_premium_interactive — interactive mode with gum TUI
+# ---------------------------------------------------------------------------
 run_premium_interactive() {
-  warn "Premium interactive mode not yet implemented"
-  info "Coming soon: gum-based TUI with fuzzy search"
+  echo
+  gum style \
+    --border rounded \
+    --border-foreground 212 \
+    --padding "1 2" \
+    --margin "1 0" \
+    "llama-models — Premium Mode" \
+    "Powered by gum TUI"
+  
+  # Prompt for search query with gum input
+  local query
+  query=$(gum input --placeholder "Enter search query (or leave empty for popular models)...")
+  
+  run_premium_search "$query"
 }
 
-run_minimal_interactive() {
-  warn "Minimal interactive mode not yet implemented"
-  info "Coming soon: bash select menu"
-}
-
+# ---------------------------------------------------------------------------
+# run_premium_search — search with gum-based fuzzy finder
+# Args: $1 = search query
+# ---------------------------------------------------------------------------
 run_premium_search() {
   local query="$1"
-  warn "Premium search not yet implemented: $query"
+  local limit=50
+  
+  # Search models via HuggingFace API
+  local results
+  results=$(search_models "$query" "$limit" 0)
+  
+  if [[ -z "$results" ]] || [[ "$results" == "[]" ]]; then
+    gum style --foreground 208 "No GGUF models found for query: ${query}"
+    return 1
+  fi
+  
+  # Parse results into arrays
+  local -a model_jsons
+  local -a model_display_lines
+  local -a model_ids
+  
+  info "Parsing results..."
+  
+  mapfile -t model_jsons < <(echo "$results" | jq -c '.[]')
+  
+  # Build display lines for gum filter
+  for i in "${!model_jsons[@]}"; do
+    local metadata
+    metadata=$(parse_model_metadata "${model_jsons[i]}")
+    
+    local model_id downloads size quant_count
+    IFS='|' read -r model_id downloads size quant_count <<< "$metadata"
+    
+    model_ids[i]="$model_id"
+    
+    # Format display line: "ID | downloads | variants"
+    printf -v display_line "%-50s  %10s downloads  %3s variants" \
+      "$model_id" "$downloads" "$quant_count"
+    model_display_lines[i]="$display_line"
+  done
+  
+  echo
+  gum style --foreground 212 "Found ${#model_ids[@]} GGUF models"
+  echo
+  
+  # Use gum filter for fuzzy selection
+  local selected_line
+  selected_line=$(printf "%s\n" "${model_display_lines[@]}" | \
+    gum filter \
+      --placeholder "Search models..." \
+      --prompt "❯ " \
+      --height 20 \
+      --indicator "→")
+  
+  if [[ -z "$selected_line" ]]; then
+    info "No model selected"
+    return 0
+  fi
+  
+  # Find which model was selected
+  local selected_index=-1
+  for i in "${!model_display_lines[@]}"; do
+    if [[ "${model_display_lines[i]}" == "$selected_line" ]]; then
+      selected_index=$i
+      break
+    fi
+  done
+  
+  if [[ $selected_index -ge 0 ]]; then
+    show_premium_model_quantizations "${model_jsons[selected_index]}" "${model_ids[selected_index]}"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# show_premium_model_quantizations — TUI for selecting quantization
+# Args: $1 = model JSON object
+#       $2 = model_id (for display)
+# ---------------------------------------------------------------------------
+show_premium_model_quantizations() {
+  local model_json="$1"
+  local model_id="$2"
+  
+  echo
+  gum style \
+    --border rounded \
+    --border-foreground 86 \
+    --padding "0 2" \
+    --margin "1 0" \
+    "Model: $model_id"
+  
+  # Get list of GGUF files
+  local gguf_files
+  gguf_files=$(list_gguf_files "$model_json")
+  
+  if [[ -z "$gguf_files" ]] || [[ "$gguf_files" == "[]" ]]; then
+    warn "No GGUF files found in model"
+    return 1
+  fi
+  
+  # Parse GGUF files into arrays
+  local -a filenames
+  local -a sizes
+  local -a quants
+  local -a display_lines
+  
+  mapfile -t < <(echo "$gguf_files" | jq -r '.[] | "\(.filename)|\(.size)|\(.quant)"')
+  
+  for line in "${MAPFILE[@]}"; do
+    IFS='|' read -r filename size quant <<< "$line"
+    
+    filenames+=("$filename")
+    sizes+=("$size")
+    quants+=("$quant")
+    
+    # Format size
+    local size_str
+    if [[ "$size" =~ ^[0-9]+$ ]] && [[ "$size" -gt 0 ]]; then
+      size_str=$(format_size "$size")
+    else
+      size_str="N/A"
+    fi
+    
+    # Format display line for gum choose
+    printf -v display_line "%-12s  %8s  %s" "$quant" "$size_str" "$filename"
+    display_lines+=("$display_line")
+  done
+  
+  # Show quantizations in a formatted table
+  echo
+  gum style --foreground 212 "Available Quantizations (${#filenames[@]} variants):"
+  echo
+  
+  # Create table header
+  echo -e "${BOLD}Quantization  Size      Filename${RESET}"
+  echo "─────────────────────────────────────────────────────────────────────────────"
+  
+  for display_line in "${display_lines[@]}"; do
+    echo "$display_line"
+  done
+  
+  echo
+  
+  # Use gum choose for selection
+  local choices=("${quants[@]}" "Back" "Quit")
+  local choice
+  choice=$(printf "%s\n" "${choices[@]}" | gum choose)
+  
+  if [[ -z "$choice" ]] || [[ "$choice" == "Quit" ]]; then
+    info "Exiting"
+    exit 0
+  elif [[ "$choice" == "Back" ]]; then
+    # Go back to model selection
+    run_premium_search "$query"
+    return 0
+  fi
+  
+  # Find selected quantization
+  local selected_index=-1
+  for i in "${!quants[@]}"; do
+    if [[ "${quants[i]}" == "$choice" ]]; then
+      selected_index=$i
+      break
+    fi
+  done
+  
+  if [[ $selected_index -ge 0 ]]; then
+    local filename="${filenames[selected_index]}"
+    
+    # Create model-specific directory
+    local sanitized_id
+    sanitized_id=$(echo "$model_id" | tr '/' '_')
+    local dest_dir="${MODELS_DIR}/${sanitized_id}"
+    
+    # Download with aria2c if available, otherwise curl
+    if check_dependency aria2c; then
+      download_aria2c_file "$model_id" "$filename" "$dest_dir"
+    else
+      download_gguf_file "$model_id" "$filename" "$dest_dir"
+    fi
+    
+    echo
+    gum style --foreground 82 "✓ Model ready to use!"
+    echo
+    gum style --foreground 212 "Saved to: ${BOLD}${dest_dir}${RESET}"
+  fi
 }
 
 run_minimal_search() {
   local query="$1"
-  warn "Minimal search not yet implemented: $query"
+  local limit=20
+  local offset=0
+  local has_more=true
+  
+  # Initialize arrays to accumulate results across pages
+  local -a all_model_ids=()
+  local -a all_model_metadata=()
+  local -a all_model_jsons=()
+  
+  # Main pagination loop
+  while true; do
+    # Search models via HuggingFace API with offset for pagination
+    local results
+    results=$(search_models "$query" "$limit" "$offset")
+    
+    if [[ -z "$results" ]] || [[ "$results" == "[]" ]]; then
+      if [[ $offset -eq 0 ]]; then
+        # No results on first page
+        echo
+        warn "No GGUF models found for query: ${query}"
+        echo
+        echo "Try a different search term, or browse popular models with:"
+        echo "  llama-models search"
+        exit 0
+      else
+        # No more results on subsequent pages
+        has_more=false
+        break
+      fi
+    fi
+    
+    # Parse results into arrays
+    local -a model_jsons
+    
+    echo
+    info "Parsing results..."
+    
+    # Use mapfile to avoid process substitution issues
+    mapfile -t model_jsons < <(echo "$results" | jq -c '.[]')
+    
+    # Check if we got fewer results than requested (means this is the last page)
+    if [[ ${#model_jsons[@]} -lt $limit ]]; then
+      has_more=false
+    fi
+    
+    # Process each model and append to accumulated arrays
+    for i in "${!model_jsons[@]}"; do
+      local metadata
+      metadata=$(parse_model_metadata "${model_jsons[i]}")
+      
+      # Extract just the model ID for display
+      local model_id
+      model_id=$(echo "$metadata" | cut -d'|' -f1)
+      
+      all_model_ids+=("$model_id")
+      all_model_metadata+=("$metadata")
+      all_model_jsons+=("${model_jsons[i]}")
+    done
+    
+    # Display all accumulated results in a formatted table
+    echo
+    echo -e "${BOLD}Found ${#all_model_ids[@]} GGUF models:${RESET}"
+    echo
+    echo -e "${BOLD}#   Model ID                                Downloads   Variants${RESET}"
+    echo "─────────────────────────────────────────────────────────────────────────────"
+    
+    for i in "${!all_model_ids[@]}"; do
+      local metadata="${all_model_metadata[i]}"
+      local model_id downloads size quant_count
+      
+      IFS='|' read -r model_id downloads size quant_count <<< "$metadata"
+      
+      # Truncate model_id if too long
+      local display_id="$model_id"
+      if [[ ${#model_id} -gt 38 ]]; then
+        display_id="${model_id:0:35}..."
+      fi
+      
+      printf "${CYAN}%-3d${RESET} %-38s %10s   ${BOLD}%8s${RESET}\n" \
+        "$((i+1))" "$display_id" "$downloads" "$quant_count"
+    done
+    
+    echo
+    
+    # Build select menu options
+    local -a select_options=("${all_model_ids[@]}")
+    
+    # Add pagination/quit options
+    if [[ "$has_more" == "true" ]]; then
+      select_options+=("── Show more ──")
+    fi
+    select_options+=("Quit")
+    
+    # Bash select menu for model selection
+    echo -e "${BOLD}Select a model to download:${RESET}"
+    
+    PS3="Enter number: "
+    local choice
+    select choice in "${select_options[@]}"; do
+      if [[ -n "$choice" ]]; then
+        if [[ "$choice" == "Quit" ]]; then
+          echo
+          info "Exiting."
+          exit 0
+        elif [[ "$choice" == "── Show more ──" ]]; then
+          # Load next page
+          offset=$((offset + limit))
+          echo
+          info "Loading more results..."
+          break
+        else
+          # User selected a model
+          # Find the selected model's index
+          local selected_index=-1
+          for i in "${!all_model_ids[@]}"; do
+            if [[ "${all_model_ids[i]}" == "$choice" ]]; then
+              selected_index=$i
+              break
+            fi
+          done
+          
+          if [[ $selected_index -ge 0 ]]; then
+            show_model_quantizations "${all_model_jsons[selected_index]}" "$choice"
+            return 0
+          fi
+        fi
+      else
+        echo "Invalid selection. Try again or press Ctrl+C to exit."
+      fi
+    done
+    
+    # If we broke out of select to load more, continue the while loop
+    if [[ "$choice" == "── Show more ──" ]]; then
+      continue
+    else
+      # If we selected a model, we returned above, so this should not happen
+      break
+    fi
+  done
+}
+
+# ---------------------------------------------------------------------------
+# show_model_quantizations — display available quants and let user pick one
+# Args: $1 = model JSON object
+#       $2 = model_id (for display)
+# ---------------------------------------------------------------------------
+show_model_quantizations() {
+  local model_json="$1"
+  local model_id="$2"
+  
+  echo
+  echo -e "${BOLD}Model:${RESET} ${model_id}"
+  echo
+  
+  # Get list of GGUF files
+  local gguf_files
+  gguf_files=$(list_gguf_files "$model_json")
+  
+  if [[ -z "$gguf_files" ]] || [[ "$gguf_files" == "[]" ]]; then
+    warn "No GGUF files found in this model"
+    exit 1
+  fi
+  
+  # Parse into arrays
+  local -a filenames
+  local -a sizes
+  local -a quants
+  
+  # Use mapfile to avoid process substitution deadlock
+  local -a gguf_array
+  mapfile -t gguf_array < <(echo "$gguf_files" | jq -c '.[]')
+  
+  for i in "${!gguf_array[@]}"; do
+    local filename size quant
+    filename=$(echo "${gguf_array[i]}" | jq -r '.filename')
+    size=$(echo "${gguf_array[i]}" | jq -r '.size')
+    quant=$(echo "${gguf_array[i]}" | jq -r '.quant')
+    
+    filenames[i]="$filename"
+    sizes[i]="$size"
+    quants[i]="$quant"
+  done
+  
+  # Display quantization options
+  echo -e "${BOLD}Available quantizations:${RESET}"
+  echo
+  echo -e "${BOLD}#   Quant     Size        Filename${RESET}"
+  echo "─────────────────────────────────────────────────────────────────────────────"
+  
+  for i in "${!filenames[@]}"; do
+    local size_human
+    size_human=$(format_size "${sizes[i]}")
+    
+    # Truncate filename if too long
+    local display_name="${filenames[i]}"
+    if [[ ${#display_name} -gt 45 ]]; then
+      display_name="${display_name:0:42}..."
+    fi
+    
+    printf "${CYAN}%-3d${RESET} %-9s %-11s %s\n" \
+      "$((i+1))" "${quants[i]}" "$size_human" "$display_name"
+  done
+  
+  echo
+  
+  # Select menu for quantization
+  echo -e "${BOLD}Select a quantization to download (or 'q' to quit):${RESET}"
+  
+  PS3="Enter number: "
+  local choice
+  select choice in "${quants[@]}" "Back" "Quit"; do
+    if [[ -n "$choice" ]]; then
+      if [[ "$choice" == "Quit" ]]; then
+        echo
+        info "Exiting."
+        exit 0
+      elif [[ "$choice" == "Back" ]]; then
+        return 0
+      fi
+      
+      # Find selected quant's index
+      local selected_index=-1
+      for i in "${!quants[@]}"; do
+        if [[ "${quants[i]}" == "$choice" ]]; then
+          selected_index=$i
+          break
+        fi
+      done
+      
+      if [[ $selected_index -ge 0 ]]; then
+        # Create organized storage path: models_dir/model_id/
+        local safe_model_id
+        safe_model_id=$(echo "$model_id" | tr '/' '_')
+        local dest_dir="${MODELS_DIR}/${safe_model_id}"
+        
+        # Download the selected file
+        download_gguf_file "$model_id" "${filenames[selected_index]}" "$dest_dir"
+        
+        echo
+        success "Model ready to use!"
+        echo
+        echo -e "Saved to: ${BOLD}${dest_dir}${RESET}"
+        echo
+        echo "Run with llama.cpp:"
+        echo "  llama-cli -m ${dest_dir}/${filenames[selected_index]}"
+        echo
+        
+        exit 0
+      fi
+    else
+      echo "Invalid selection. Try again or press Ctrl+C to exit."
+    fi
+  done
 }
 
 list_local_models() {

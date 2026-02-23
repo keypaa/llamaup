@@ -19,6 +19,64 @@ Every script is designed to **fail loudly** with clear error messages rather tha
 
 ## Automated Test Suites
 
+### `test_task7.sh` — llama-models Minimal Mode
+
+**Purpose:** Validate the minimal mode implementation (Task 7)
+
+**What it tests:**
+- Bash syntax validation
+- HuggingFace API search functionality
+- Model metadata parsing
+- GGUF file extraction from model data
+- Size formatting (bytes → GiB/MiB)
+- Array population and display logic
+- Function completeness (all required functions exist)
+
+**How to run:**
+```bash
+./test_task7.sh
+```
+
+**Expected output:**
+```
+========================================
+Task 7 Test Suite: Minimal Mode
+========================================
+
+✓ Test 1: Bash syntax validation
+  ✓ No syntax errors detected
+
+✓ Test 2: HuggingFace API search
+  ✓ API returned 3 models
+
+✓ Test 3: Model metadata parsing
+  ✓ Model ID: TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF
+  ✓ Downloads: 110593
+  ✓ Quant count: 12
+
+✓ Test 4: GGUF file extraction
+  ✓ Found 12 GGUF files
+  ✓ Example: Q2_K - tinyllama-1.1b-chat-v1.0.Q2_K.gguf
+
+...
+
+✓ All automated tests passed!
+```
+
+**Interactive testing:**
+```bash
+# Test search with specific query
+./scripts/llama-models search tinyllama
+
+# Test full interactive mode
+./scripts/llama-models
+
+# Test minimal mode explicitly
+./scripts/llama-models --mode minimal search qwen
+```
+
+---
+
 ### `scripts/test_gpu_matching.sh`
 
 **Purpose:** Validate GPU name → SM version mapping logic
