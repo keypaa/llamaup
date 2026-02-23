@@ -224,45 +224,28 @@ install_linux_dependencies() {
 }
 
 # ---------------------------------------------------------------------------
-# install_gum_linux — install gum binary on Linux
+# install_gum_linux — install gum binary on Linux via Charm APT repo
 # ---------------------------------------------------------------------------
 install_gum_linux() {
-  local arch
-  arch="$(uname -m)"
-  local gum_url
-  
-  case "$arch" in
-    x86_64)
-      gum_url="https://github.com/charmbracelet/gum/releases/latest/download/gum_Linux_x86_64.tar.gz"
-      ;;
-    aarch64|arm64)
-      gum_url="https://github.com/charmbracelet/gum/releases/latest/download/gum_Linux_arm64.tar.gz"
-      ;;
-    *)
-      warn "Unsupported architecture: $arch"
-      return 1
-      ;;
-  esac
-  
-  info "Downloading gum..."
-  local tmp_dir
-  tmp_dir="$(mktemp -d)"
-  
-  curl -fsSL "$gum_url" -o "$tmp_dir/gum.tar.gz"
-  tar -xzf "$tmp_dir/gum.tar.gz" -C "$tmp_dir"
-  
-  # Install to ~/.local/bin
-  mkdir -p "$HOME/.local/bin"
-  mv "$tmp_dir/gum" "$HOME/.local/bin/gum"
-  chmod +x "$HOME/.local/bin/gum"
-  
-  rm -rf "$tmp_dir"
-  
-  # Add to PATH if not already there
-  if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
-    warn "Add ~/.local/bin to your PATH:"
-    echo '  export PATH="$HOME/.local/bin:$PATH"'
+  # Check if we have sudo access
+  if ! sudo -n true 2>/dev/null && ! [[ $EUID -eq 0 ]]; then
+    warn "sudo access required to install gum via APT. Please run with sudo privileges or install gum manually."
+    echo "Manual installation: https://github.com/charmbracelet/gum#installation"
+    return 1
   fi
+
+  info "Adding Charm APT repository..."
+  sudo mkdir -p /etc/apt/keyrings
+  curl -fsSL https://repo.charm.sh/apt/gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/charm.gpg
+  echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" | sudo tee /etc/apt/sources.list.d/charm.list > /dev/null
+
+  info "Updating package list..."
+  sudo apt update
+
+  info "Installing gum..."
+  sudo apt install -y gum
+
+  success "gum installed successfully!"
 }
 
 # ---------------------------------------------------------------------------
