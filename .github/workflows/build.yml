@@ -158,13 +158,19 @@ jobs:
         run: |
           apt-get update -qq
           apt-get install -y --no-install-recommends \
-            wget gnupg software-properties-common git jq curl ca-certificates libssl-dev libcurl4-openssl-dev
+            wget gnupg software-properties-common git jq curl ca-certificates \
+            libssl-dev libcurl4-openssl-dev pkg-config
           
           # Install CMake 3.18+ from Kitware's official repo (Ubuntu 20.04 ships 3.16)
           wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | apt-key add -
           apt-add-repository 'deb https://apt.kitware.com/ubuntu/ focal main'
           apt-get update -qq
           apt-get install -y --no-install-recommends cmake ninja-build
+          
+          # Verify OpenSSL installation
+          echo "OpenSSL version: $(openssl version)"
+          echo "libssl-dev location: $(dpkg -L libssl-dev | grep -E 'libssl\.so$|libcrypto\.so$' | head -2)"
+          echo "pkg-config can find OpenSSL: $(pkg-config --modversion openssl || echo 'NOT FOUND')"
 
       - name: Restore llama.cpp source cache
         id: cache-src
@@ -209,6 +215,15 @@ jobs:
                 -DLLAMA_CURL=ON \
                 -DLLAMA_OPENSSL=ON \
                 -G Ninja
+          
+          # Verify OpenSSL was found by CMake
+          if ! grep -q "Found OpenSSL" /tmp/llamaup-build/CMakeCache.txt 2>/dev/null; then
+            echo "ERROR: OpenSSL not found by CMake!"
+            echo "CMake output:"
+            cat /tmp/llamaup-build/CMakeFiles/CMakeOutput.log || true
+            exit 1
+          fi
+          echo "✓ OpenSSL detected successfully"
 
       - name: cmake build
         run: cmake --build /tmp/llamaup-build --parallel "$(nproc)"
@@ -320,6 +335,19 @@ jobs:
             echo "ERROR: llama-cli --help failed" >&2
             exit 1
           fi
+
+          # Verify HTTPS support is built in
+          # Try to trigger the -hf flag (which requires HTTPS)
+          # If HTTPS is not supported, it will print the error message
+          HTTPS_TEST=$("$BINARY" -hf --help 2>&1 || true)
+          if echo "$HTTPS_TEST" | grep -q "HTTPS is not supported"; then
+            echo "ERROR: Binary was built without HTTPS support!" >&2
+            echo "This means -DLLAMA_OPENSSL=ON was not effective during build" >&2
+            echo "$BINARY" -hf output: >&2
+            echo "$HTTPS_TEST" >&2
+            exit 1
+          fi
+          echo "✓ HTTPS support verified"
 
           echo "Smoke test passed: binary runs"
 
