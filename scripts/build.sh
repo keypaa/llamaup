@@ -290,28 +290,15 @@ build() {
   mkdir -p "$build_dir" "$install_dir"
 
   info "Configuring (SM ${sm_version})..."
+  # LLAMA_BUILD_LIBRESSL=ON builds LibreSSL from source — no system OpenSSL required.
   cmake -S "$src_dir" -B "$build_dir" \
     -DCMAKE_BUILD_TYPE=Release \
     -DGGML_CUDA=ON \
     -DCMAKE_CUDA_ARCHITECTURES="${sm_version}" \
     -DCMAKE_INSTALL_PREFIX="$install_dir" \
-    -DLLAMA_CURL=ON \
-    -DLLAMA_OPENSSL=ON \
+    -DLLAMA_BUILD_LIBRESSL=ON \
     -G Ninja \
-    2>&1 || error "cmake configure failed.\n  → Check that CUDA toolkit is installed and nvcc is in PATH.\n  → OpenSSL dev files required for HTTPS: apt install libssl-dev pkg-config (Debian/Ubuntu) or yum install openssl-devel (RHEL/CentOS)\n  → libcurl dev files required: apt install libcurl4-openssl-dev (Debian/Ubuntu) or yum install libcurl-devel (RHEL/CentOS)\n  → Try: nvcc --version"
-
-  # Verify that OpenSSL was actually found by cmake
-  if ! grep -qi "Found OpenSSL" "$build_dir/CMakeCache.txt" 2>/dev/null; then
-    warn "OpenSSL NOT found by CMake! The binary will not support HTTPS (-hf flag)."
-    echo ""
-    echo "To fix this, install OpenSSL development files:"
-    echo "  Debian/Ubuntu: sudo apt install libssl-dev pkg-config"
-    echo "  RHEL/CentOS:   sudo yum install openssl-devel pkg-config"
-    echo ""
-    echo "Then re-run this script."
-    error "Build aborted due to missing HTTPS support"
-  fi
-  info "OpenSSL detected — HTTPS support enabled"
+    2>&1 || error "cmake configure failed.\n  → Check that CUDA toolkit is installed and nvcc is in PATH.\n  → Try: nvcc --version"
 
   info "Compiling with ${build_jobs} jobs..."
   cmake --build "$build_dir" --parallel "$build_jobs" \
