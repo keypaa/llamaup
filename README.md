@@ -211,6 +211,9 @@ The exact set of binaries varies by llama.cpp version. The three core tools (`ll
 ### Quick Start
 
 ```bash
+# Make the script executable first (only needed once)
+chmod +x scripts/llama-models
+
 # Search for models (auto-detects best available mode)
 ./scripts/llama-models search qwen2.5-7b-instruct
 
@@ -232,7 +235,7 @@ The exact set of binaries varies by llama.cpp version. The three core tools (`ll
 ✅ **Smart search**: Query HuggingFace's GGUF model collection  
 ✅ **Interactive selection**: Choose models and quantizations with arrow keys  
 ✅ **Multi-select** (premium mode): Download multiple models at once  
-✅ **Fast downloads**: `aria2c` multi-connection downloads (premium mode)  
+✅ **Fast downloads**: `aria2c` multi-connection downloads (premium mode) — typically 3–8x faster than llama.cpp's built-in `-hf` flag, which uses a single TCP connection  
 ✅ **Fallback mode**: Works everywhere with just `curl` and `jq`  
 ✅ **Smart storage**: Models saved to `~/.local/share/llama-models/`  
 
