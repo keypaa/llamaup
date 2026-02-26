@@ -158,7 +158,8 @@ jobs:
         run: |
           apt-get update -qq
           apt-get install -y --no-install-recommends \
-            wget gnupg software-properties-common git jq curl ca-certificates
+            wget gnupg software-properties-common git jq curl ca-certificates \
+            golang-go
           
           # Install CMake 3.18+ from Kitware's official repo (Ubuntu 20.04 ships 3.16)
           wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | apt-key add -
@@ -200,16 +201,18 @@ jobs:
 
       - name: cmake configure
         run: |
-          # LLAMA_BUILD_LIBRESSL=ON builds LibreSSL from source during the cmake build.
-          # This avoids the system OpenSSL version requirement (Ubuntu 20.04 ships 1.1.1f
-          # which fails llama.cpp's OPENSSL_VERSION_SUPPORTED check).
+          # LLAMA_BUILD_BORINGSSL=ON builds BoringSSL from source and bundles Mozilla's
+          # root CA store directly into the binary. This means:
+          #   - No system OpenSSL version requirement (Ubuntu 20.04 has 1.1.1f which is too old)
+          #   - No runtime dependency on system CA certificate paths
+          #   - HTTPS works out of the box on any Linux target machine
           cmake -S /tmp/llamaup-src \
                 -B /tmp/llamaup-build \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DGGML_CUDA=ON \
                 -DCMAKE_CUDA_ARCHITECTURES=${{ matrix.sm }} \
                 -DCMAKE_INSTALL_PREFIX=/tmp/llamaup-install \
-                -DLLAMA_BUILD_LIBRESSL=ON \
+                -DLLAMA_BUILD_BORINGSSL=ON \
                 -G Ninja
 
       - name: cmake build

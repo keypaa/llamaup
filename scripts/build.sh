@@ -290,13 +290,14 @@ build() {
   mkdir -p "$build_dir" "$install_dir"
 
   info "Configuring (SM ${sm_version})..."
-  # LLAMA_BUILD_LIBRESSL=ON builds LibreSSL from source — no system OpenSSL required.
+  # LLAMA_BUILD_BORINGSSL=ON builds BoringSSL from source and bundles Mozilla's CA store
+  # into the binary, so HTTPS (-hf flag) works on any Linux without system SSL dependencies.
   cmake -S "$src_dir" -B "$build_dir" \
     -DCMAKE_BUILD_TYPE=Release \
     -DGGML_CUDA=ON \
     -DCMAKE_CUDA_ARCHITECTURES="${sm_version}" \
     -DCMAKE_INSTALL_PREFIX="$install_dir" \
-    -DLLAMA_BUILD_LIBRESSL=ON \
+    -DLLAMA_BUILD_BORINGSSL=ON \
     -G Ninja \
     2>&1 || error "cmake configure failed.\n  → Check that CUDA toolkit is installed and nvcc is in PATH.\n  → Try: nvcc --version"
 
