@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# llama-models — HuggingFace GGUF model browser and downloader
+# llama-models -- HuggingFace GGUF model browser and downloader
 #
 # Optional TUI tool for browsing and downloading GGUF models from HuggingFace.
 # Supports two modes:
@@ -50,15 +50,15 @@ fi
 # Helper functions
 # ---------------------------------------------------------------------------
 error()   { echo -e "${RED}Error: $1${RESET}" >&2; exit 1; }
-info()    { echo -e "${CYAN}→ $1${RESET}" >&2; }
-success() { echo -e "${GREEN}✓ $1${RESET}" >&2; }
-warn()    { echo -e "${YELLOW}⚠ $1${RESET}" >&2; }
+info()    { echo -e "${CYAN}-> $1${RESET}" >&2; }
+success() { echo -e "${GREEN}[OK] $1${RESET}" >&2; }
+warn()    { echo -e "${YELLOW}[!] $1${RESET}" >&2; }
 
 # ---------------------------------------------------------------------------
-# usage — print CLI help and exit 0
+# usage -- print CLI help and exit 0
 # ---------------------------------------------------------------------------
 usage() {
-  echo -e "${BOLD}llama-models${RESET} v${VERSION} — HuggingFace GGUF Model Browser"
+  echo -e "${BOLD}llama-models${RESET} v${VERSION} -- HuggingFace GGUF Model Browser"
   echo
   echo -e "${BOLD}USAGE${RESET}"
   echo "  llama-models [OPTIONS] [QUERY]"
@@ -97,7 +97,7 @@ usage() {
 }
 
 # ---------------------------------------------------------------------------
-# check_dependency — check if a command exists
+# check_dependency -- check if a command exists
 # Args: $1 = command name
 # Returns: 0 if exists, 1 if not
 # ---------------------------------------------------------------------------
@@ -106,7 +106,7 @@ check_dependency() {
 }
 
 # ---------------------------------------------------------------------------
-# detect_mode — auto-detect which mode to use
+# detect_mode -- auto-detect which mode to use
 # Sets the global MODE variable to "premium" or "minimal"
 # Args: $1 = action (optional: "list" or "sync" won't trigger installation prompt)
 # ---------------------------------------------------------------------------
@@ -139,15 +139,15 @@ detect_mode() {
 }
 
 # ---------------------------------------------------------------------------
-# offer_installation — prompt user to install premium dependencies
+# offer_installation -- prompt user to install premium dependencies
 # ---------------------------------------------------------------------------
 offer_installation() {
   echo
-  echo -e "${BOLD}llama-models${RESET} — Enhanced Mode Available"
+  echo -e "${BOLD}llama-models${RESET} -- Enhanced Mode Available"
   echo
   echo -e "For the best experience, install optional dependencies:"
-  echo -e "  ${GREEN}•${RESET} ${BOLD}gum${RESET}    — Modern TUI framework"
-  echo -e "  ${GREEN}•${RESET} ${BOLD}aria2c${RESET} — Ultra-fast downloads (16x faster than curl)"
+  echo -e "  ${GREEN}*${RESET} ${BOLD}gum${RESET}    -- Modern TUI framework"
+  echo -e "  ${GREEN}*${RESET} ${BOLD}aria2c${RESET} -- Ultra-fast downloads (16x faster than curl)"
   echo
   echo -e "${DIM}Without these, you'll use basic mode (bash menu + curl)${RESET}"
   echo
@@ -165,7 +165,7 @@ offer_installation() {
 }
 
 # ---------------------------------------------------------------------------
-# install_dependencies — install gum and aria2c
+# install_dependencies -- install gum and aria2c
 # ---------------------------------------------------------------------------
 install_dependencies() {
   info "Installing dependencies..."
@@ -201,7 +201,7 @@ install_dependencies() {
 }
 
 # ---------------------------------------------------------------------------
-# install_linux_dependencies — install on Linux
+# install_linux_dependencies -- install on Linux
 # ---------------------------------------------------------------------------
 install_linux_dependencies() {
   # Detect package manager
@@ -224,7 +224,7 @@ install_linux_dependencies() {
 }
 
 # ---------------------------------------------------------------------------
-# install_gum_linux — install gum binary on Linux via Charm APT repo
+# install_gum_linux -- install gum binary on Linux via Charm APT repo
 # ---------------------------------------------------------------------------
 install_gum_linux() {
   # Check if we have sudo access
@@ -249,7 +249,7 @@ install_gum_linux() {
 }
 
 # ---------------------------------------------------------------------------
-# install_macos_dependencies — install on macOS via Homebrew
+# install_macos_dependencies -- install on macOS via Homebrew
 # ---------------------------------------------------------------------------
 install_macos_dependencies() {
   if ! check_dependency brew; then
@@ -266,7 +266,7 @@ install_macos_dependencies() {
 # ===========================================================================
 
 # ---------------------------------------------------------------------------
-# search_models — query HuggingFace API for GGUF models
+# search_models -- query HuggingFace API for GGUF models
 # Args: $1 = search query (optional, searches all if empty)
 #       $2 = limit (optional, default 50)
 # Returns: JSON array of models (via stdout)
@@ -316,7 +316,7 @@ search_models() {
 }
 
 # ---------------------------------------------------------------------------
-# fetch_model_details — get full metadata for a single model
+# fetch_model_details -- get full metadata for a single model
 # Args: $1 = model_id (e.g. "bartowski/Llama-3.1-8B-GGUF")
 # Returns: JSON object or empty string on failure
 # ---------------------------------------------------------------------------
@@ -342,7 +342,7 @@ fetch_model_details() {
 }
 
 # ---------------------------------------------------------------------------
-# filter_gguf_models — extract only GGUF models from API results
+# filter_gguf_models -- extract only GGUF models from API results
 # Args: $1 = JSON array from search_models
 # Returns: Filtered JSON array with only GGUF models (via stdout)
 # Note: Filters models that have .gguf files in siblings array
@@ -361,7 +361,7 @@ filter_gguf_models() {
 }
 
 # ---------------------------------------------------------------------------
-# parse_model_metadata — extract metadata from a single model
+# parse_model_metadata -- extract metadata from a single model
 # Args: $1 = model JSON object
 # Returns: pipe-separated string: id|downloads|size|quant_count
 # Example: "TheBloke/Llama-2-7B-GGUF|125000|7.2GiB|8"
@@ -409,7 +409,7 @@ parse_model_metadata() {
 }
 
 # ---------------------------------------------------------------------------
-# list_gguf_files — list all GGUF files for a specific model
+# list_gguf_files -- list all GGUF files for a specific model
 # Args: $1 = model JSON object
 # Returns: JSON array of GGUF files with name, size, quant type
 # Note: Extracts quant from filename using comprehensive regex patterns
@@ -473,7 +473,7 @@ list_gguf_files() {
 # ===========================================================================
 
 # ---------------------------------------------------------------------------
-# check_existing_file — check if file already exists and prompt to overwrite
+# check_existing_file -- check if file already exists and prompt to overwrite
 # Args: $1 = dest_dir (model directory)
 #       $2 = filename (GGUF filename)
 # Returns: 0 if download should proceed, 1 if should skip
@@ -521,7 +521,7 @@ check_existing_file() {
 }
 
 # ---------------------------------------------------------------------------
-# download_gguf_file — download a GGUF file from HuggingFace with progress
+# download_gguf_file -- download a GGUF file from HuggingFace with progress
 # Args: $1 = model_id (e.g. "bartowski/Llama-3.1-8B-GGUF")
 #       $2 = filename (e.g. "Llama-3.1-8B-Q4_K_M.gguf")
 #       $3 = dest_dir (directory to save to)
@@ -555,8 +555,8 @@ show_download_progress() {
         local bar=""
         local i
 
-        for ((i=0; i<filled; i++)); do bar+="█"; done
-        for ((i=0; i<empty; i++)); do bar+="░"; done
+        for ((i=0; i<filled; i++)); do bar+="#"; done
+        for ((i=0; i<empty; i++)); do bar+="."; done
 
         # Format sizes
         local downloaded_str
@@ -638,7 +638,7 @@ download_gguf_file() {
     # Show 100% completion
     local bar=""
     local i
-    for ((i=0; i<30; i++)); do bar+="█"; done
+    for ((i=0; i<30; i++)); do bar+="#"; done
     
     if [[ -z "$total_size" ]]; then
       local bytes
@@ -670,7 +670,7 @@ download_gguf_file() {
 }
 
 # ---------------------------------------------------------------------------
-# download_aria2c_file — download using aria2c for faster multi-connection
+# download_aria2c_file -- download using aria2c for faster multi-connection
 # Args: $1 = model_id (e.g. "bartowski/Llama-3.1-8B-GGUF")
 #       $2 = filename (e.g. "Llama-3.1-8B-Q4_K_M.gguf")
 #       $3 = dest_dir (directory to save to)
@@ -751,7 +751,7 @@ download_aria2c_file() {
 }
 
 # ---------------------------------------------------------------------------
-# save_download_metadata — save metadata JSON for a downloaded model
+# save_download_metadata -- save metadata JSON for a downloaded model
 # Args: $1 = dest_dir (model directory)
 #       $2 = model_id (HuggingFace model ID)
 #       $3 = filename (GGUF filename)
@@ -841,7 +841,7 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
-# format_size — convert bytes to human-readable size
+# format_size -- convert bytes to human-readable size
 # Args: $1 = size in bytes
 # Returns: formatted string like "4.2GiB" or "512MiB"
 # ---------------------------------------------------------------------------
@@ -871,7 +871,7 @@ format_size() {
 }
 
 # ---------------------------------------------------------------------------
-# get_quant_label — classify quantization quality
+# get_quant_label -- classify quantization quality
 # Args: $1 = quantization string (e.g. "Q4_K_M", "F16")
 # Returns: label|color (e.g. "Lossless|GREEN" or "Lossy|RED")
 # Note: Smaller models suffer more from quantization. On models < 7B, prefer Q6_K minimum.
@@ -943,7 +943,7 @@ get_quant_label() {
 }
 
 # ---------------------------------------------------------------------------
-# quant_rank — sort order for quantizations (lower is better)
+# quant_rank -- sort order for quantizations (lower is better)
 # Args: $1 = quantization string (e.g. "Q4_K_M")
 # Returns: numeric rank
 # ---------------------------------------------------------------------------
@@ -986,7 +986,7 @@ quant_rank() {
 # ===========================================================================
 
 # ---------------------------------------------------------------------------
-# main — entry point
+# main -- entry point
 # ---------------------------------------------------------------------------
 main() {
   # Parse arguments
@@ -1074,242 +1074,406 @@ main() {
 }
 
 # ---------------------------------------------------------------------------
-# Placeholder functions (to be implemented in next phases)
-# ---------------------------------------------------------------------------
-# run_premium_interactive — interactive mode with gum TUI
+# run_premium_interactive -- home screen with gum-based navigation menu
 # ---------------------------------------------------------------------------
 run_premium_interactive() {
-  echo
-  gum style \
-    --border rounded \
-    --border-foreground 212 \
-    --padding "1 2" \
-    --margin "1 0" \
-    "llama-models — Premium Mode" \
-    "Powered by gum TUI"
-  
-  # Prompt for search query with gum input
-  local query
-  query=$(gum input --placeholder "Enter search query (or leave empty for popular models)...")
-  
-  run_premium_search "$query"
+  while true; do
+    clear
+    gum style \
+      --border double \
+      --border-foreground 212 \
+      --padding "1 4" \
+      --margin "0 2" \
+      "llama-models v${VERSION}" \
+      "HuggingFace GGUF Browser"
+    echo
+
+    local choice
+    choice=$(gum choose \
+      --header "What would you like to do?" \
+      --header.foreground 212 \
+      --cursor.foreground 212 \
+      "Search models" \
+      "Browse popular models" \
+      "List local models" \
+      "Quit") || choice="Quit"
+
+    case "$choice" in
+      "Search models")
+        echo
+        local query
+        query=$(gum input \
+          --placeholder "Type a model name or keyword..." \
+          --prompt "Search > " \
+          --prompt.foreground 212 \
+          --width 60) || query=""
+        echo
+        run_premium_search "$query"
+        ;;
+      "Browse popular models")
+        echo
+        run_premium_search ""
+        ;;
+      "List local models")
+        echo
+        list_local_models
+        ;;
+      *)
+        exit 0
+        ;;
+    esac
+  done
 }
 
 # ---------------------------------------------------------------------------
-# run_premium_search — search with gum-based fuzzy finder
-# Args: $1 = search query
+# run_premium_search -- search and browse models with gum filter + pagination
+# Args: $1 = search query (empty = popular models sorted by downloads)
+# Loop: re-shows filter after returning from quantization view (no re-fetch).
+#       "Load more" fetches the next page and appends to the list.
 # ---------------------------------------------------------------------------
 run_premium_search() {
-  local query="$1"
+  local query="${1:-}"
   local limit=50
-  
-  # Search models via HuggingFace API
-  local results
-  results=$(search_models "$query" "$limit" 0)
-  
-  if [[ -z "$results" ]] || [[ "$results" == "[]" ]]; then
-    gum style --foreground 208 "No GGUF models found for query: ${query}"
-    return 1
-  fi
-  
-  # Parse results into arrays
-  local -a model_jsons
-  local -a model_display_lines
-  local -a model_ids
-  
-  info "Parsing results..."
-  
-  mapfile -t model_jsons < <(echo "$results" | jq -c '.[]')
-  
-  # Build display lines for gum filter
-  for i in "${!model_jsons[@]}"; do
-    local metadata
-    metadata=$(parse_model_metadata "${model_jsons[i]}")
-    
-    local model_id downloads size quant_count
-    IFS='|' read -r model_id downloads size quant_count <<< "$metadata"
-    
-    model_ids[i]="$model_id"
-    
-    # Format display line: "ID | downloads | variants"
-    printf -v display_line "%-50s  %10s downloads  %3s variants" \
-      "$model_id" "$downloads" "$quant_count"
-    model_display_lines[i]="$display_line"
-  done
-  
-  echo
-  gum style --foreground 212 "Found ${#model_ids[@]} GGUF models"
-  echo
-  
-  # Use gum filter for fuzzy selection
-  local selected_line
-  selected_line=$(printf "%s\n" "${model_display_lines[@]}" | \
-    gum filter \
-      --placeholder "Search models..." \
-      --prompt "❯ " \
-      --height 20 \
-      --indicator "→")
-  
-  if [[ -z "$selected_line" ]]; then
-    info "No model selected"
-    return 0
-  fi
-  
-  # Find which model was selected
-  local selected_index=-1
-  for i in "${!model_display_lines[@]}"; do
-    if [[ "${model_display_lines[i]}" == "$selected_line" ]]; then
-      selected_index=$i
-      break
+  local offset=0
+  local -a all_model_ids=()
+  local -a all_model_jsons=()
+  local -a all_display_lines=()
+  local has_more=false
+  local need_fetch=true
+
+  while true; do
+    # -- Fetch a page of results ---------------------------------------------
+    if [[ "$need_fetch" == "true" ]]; then
+      need_fetch=false
+
+      # Build the HuggingFace API URL
+      local params="limit=${limit}&sort=downloads&direction=-1&full=true&filter=gguf"
+      if [[ -n "$query" ]]; then
+        local encoded_query
+        encoded_query=$(printf '%s' "$query" | sed 's/ /%20/g')
+        params="${params}&search=${encoded_query}"
+      fi
+      if [[ "$offset" -gt 0 ]]; then
+        params="${params}&skip=${offset}"
+      fi
+      local full_url="${HF_API_URL}?${params}"
+
+      # Fetch with a gum spinner so the user sees progress
+      local page_results=""
+      if ! page_results=$(gum spin \
+          --spinner dot \
+          --title "Fetching GGUF models from HuggingFace..." \
+          --show-output \
+          -- curl -fsSL --max-time 30 "$full_url" 2>/dev/null); then
+        gum style --foreground 196 "?-- Failed to query HuggingFace API. Check your connection."
+        return 1
+      fi
+
+      if ! echo "$page_results" | jq empty 2>/dev/null; then
+        gum style --foreground 196 "?-- Invalid API response from HuggingFace."
+        return 1
+      fi
+
+      local page_count
+      page_count=$(echo "$page_results" | jq 'length')
+
+      if [[ "$page_count" -eq 0 ]]; then
+        if [[ $offset -eq 0 ]]; then
+          echo
+          gum style --foreground 208 "No GGUF models found${query:+ matching: \"${query}\"}"
+          gum style --foreground 245 "Try a different search term."
+          return 0
+        fi
+        # No more pages -- display accumulated results without "load more"
+        has_more=false
+      else
+        # Accumulate results from this page into the master arrays
+        local -a page_jsons=()
+        mapfile -t page_jsons < <(echo "$page_results" | jq -c '.[]')
+
+        has_more=false
+        if [[ ${#page_jsons[@]} -ge $limit ]]; then
+          has_more=true
+        fi
+
+        for json in "${page_jsons[@]}"; do
+          local metadata
+          metadata=$(parse_model_metadata "$json")
+          local model_id downloads size quant_count
+          IFS='|' read -r model_id downloads size quant_count <<< "$metadata"
+
+          all_model_ids+=("$model_id")
+          all_model_jsons+=("$json")
+
+          local display_line
+          printf -v display_line "%-52s  %12s dl  %3s variants" \
+            "$model_id" "$downloads" "$quant_count"
+          all_display_lines+=("$display_line")
+        done
+      fi
+    fi
+
+    # -- Present gum filter --------------------------------------------------
+    clear
+    gum style \
+      --bold \
+      --foreground 212 \
+      "  ${#all_model_ids[@]} GGUF models${query:+ matching \"${query}\"}"
+    gum style \
+      --foreground 245 \
+      "  Start typing to filter  |  up/dn navigate  |  Enter select  |  Esc back"
+    echo
+
+    local -a filter_items=("${all_display_lines[@]}")
+    [[ "$has_more" == "true" ]] && filter_items+=("-- Load 50 more results --")
+    filter_items+=("-- Back to menu --")
+
+    local selected=""
+    selected=$(printf "%s\n" "${filter_items[@]}" | \
+      gum filter \
+        --placeholder "Fuzzy search models..." \
+        --prompt "  >  " \
+        --prompt.foreground 212 \
+        --match.foreground 212 \
+        --height 20 \
+        --indicator=">" \
+        --indicator.foreground 212) || selected=""
+
+    case "$selected" in
+      "-- Back to menu --"|"")
+        return 0
+        ;;
+      "-- Load 50 more results --")
+        offset=$((offset + limit))
+        need_fetch=true
+        continue
+        ;;
+    esac
+
+    # The first whitespace-delimited token of each display line is the model_id
+    local selected_model_id
+    selected_model_id=$(printf '%s' "$selected" | awk '{print $1}')
+    local selected_index=-1
+    for i in "${!all_model_ids[@]}"; do
+      if [[ "${all_model_ids[i]}" == "$selected_model_id" ]]; then
+        selected_index=$i
+        break
+      fi
+    done
+
+    if [[ $selected_index -ge 0 ]] && [[ $selected_index -lt ${#all_model_ids[@]} ]]; then
+      show_premium_model_quantizations \
+        "${all_model_jsons[$selected_index]}" \
+        "${all_model_ids[$selected_index]}"
+      # After returning (download done or Back selected), the while loop
+      # continues and re-presents the same filter -- no re-fetch needed.
     fi
   done
-  
-  if [[ $selected_index -ge 0 ]]; then
-    show_premium_model_quantizations "${model_jsons[selected_index]}" "${model_ids[selected_index]}"
-  fi
 }
 
 # ---------------------------------------------------------------------------
-# show_premium_model_quantizations — TUI for selecting quantization
+# show_premium_model_quantizations -- select and download a quantization
 # Args: $1 = model JSON object
-#       $2 = model_id (for display)
+#       $2 = model_id
+# Returns 0 when done (download complete, user chose Back, or cancelled).
+# Callers should loop back to re-show search results after this returns.
 # ---------------------------------------------------------------------------
 show_premium_model_quantizations() {
   local model_json="$1"
   local model_id="$2"
-  
+
   echo
   gum style \
     --border rounded \
     --border-foreground 86 \
-    --padding "0 2" \
+    --padding "1 2" \
     --margin "1 0" \
-    "Model: $model_id"
-  
-  # Get list of GGUF files
+    "Model: ${model_id}"
+  echo
+
+  # Fetch GGUF files; refresh sizes from the detail endpoint if any are missing
   local gguf_files
   gguf_files=$(list_gguf_files "$model_json")
 
-  # If sizes are missing, refresh from the model detail endpoint
-  if echo "$gguf_files" | jq -e 'any(.[]; (.size == null) or (.size | tostring | length == 0))' >/dev/null 2>&1; then
-    info "Refreshing file sizes from model metadata..."
-    local refreshed_json
-    refreshed_json=$(fetch_model_details "$model_id")
-    if [[ -n "$refreshed_json" ]]; then
-      gguf_files=$(list_gguf_files "$refreshed_json")
+  if echo "$gguf_files" | jq -e 'any(.[]; .size == null or .size == 0)' >/dev/null 2>&1; then
+    local refreshed_json=""
+    if refreshed_json=$(gum spin \
+        --spinner dot \
+        --title "Fetching file metadata..." \
+        --show-output \
+        -- curl -fsSL --max-time 30 \
+          "https://huggingface.co/api/models/${model_id}?full=true" 2>/dev/null); then
+      if echo "$refreshed_json" | jq empty 2>/dev/null; then
+        gguf_files=$(list_gguf_files "$refreshed_json")
+      fi
     fi
   fi
-  
+
   if [[ -z "$gguf_files" ]] || [[ "$gguf_files" == "[]" ]]; then
-    warn "No GGUF files found in model"
+    gum style --foreground 208 "No GGUF files found for this model."
     return 1
   fi
-  
-  # Parse GGUF files into arrays
-  local -a filenames
-  local -a sizes
-  local -a quants
-  local -a display_lines
-  
-  mapfile -t < <(echo "$gguf_files" | jq -r '.[] | "\(.filename)|\(.size)|\(.quant)"')
-  
-  for line in "${MAPFILE[@]}"; do
-    IFS='|' read -r filename size quant <<< "$line"
-    
-    filenames+=("$filename")
-    sizes+=("$size")
-    quants+=("$quant")
-    
-    # Format size
-    local size_str
-    if [[ "$size" =~ ^[0-9]+$ ]] && [[ "$size" -gt 0 ]]; then
-      size_str=$(format_size "$size")
-    else
-      size_str="N/A"
-    fi
-    
-    # Get quality label
-    local label_info label_text label_color
-    label_info=$(get_quant_label "$quant")
-    IFS='|' read -r label_text label_color <<< "$label_info"
-    
-    # Format display line for gum choose (with color-coded label)
-    printf -v display_line "%-12s  %8s  ${label_color}%-10s${RESET}  %s" \
-      "$quant" "$size_str" "$label_text" "$filename"
-    display_lines+=("$display_line")
+
+  # Parse GGUF file list into parallel arrays
+  local -a filenames=() sizes=() quants=()
+  local -a gguf_array=()
+  mapfile -t gguf_array < <(echo "$gguf_files" | jq -c '.[]')
+
+  for item in "${gguf_array[@]}"; do
+    filenames+=("$(echo "$item" | jq -r '.filename')")
+    sizes+=("$(echo "$item" | jq -r '.size // 0')")
+    quants+=("$(echo "$item" | jq -r '.quant')")
   done
-  
-  # Show quantizations in a formatted table
-  echo
-  gum style --foreground 212 "Available Quantizations (${#filenames[@]} variants):"
-  echo
-  
-  # Create table header
-  echo -e "${BOLD}Quantization  Size      Quality     Filename${RESET}"
-  echo "─────────────────────────────────────────────────────────────────────────────"
-  
-  for display_line in "${display_lines[@]}"; do
-    echo -e "$display_line"
-  done
-  
-  echo
-  
-  # Use gum choose for selection
-  local choices=("${quants[@]}" "Back" "Quit")
-  local choice
-  choice=$(printf "%s\n" "${choices[@]}" | gum choose)
-  
-  if [[ -z "$choice" ]] || [[ "$choice" == "Quit" ]]; then
-    info "Exiting"
-    exit 0
-  elif [[ "$choice" == "Back" ]]; then
-    # Go back to model selection
-    run_premium_search "$query"
-    return 0
+
+  # Sort by quality tier ascending, then by file size descending (best first)
+  if [[ ${#quants[@]} -gt 1 ]]; then
+    local -a sort_keys=()
+    for i in "${!quants[@]}"; do
+      local sz="${sizes[i]}"
+      [[ "$sz" =~ ^[0-9]+$ ]] || sz=0
+      sort_keys+=("$(quant_rank "${quants[i]}")|${sz}|${i}")
+    done
+    local -a sfn=() ssz=() sqt=()
+    IFS=$'\n' read -r -d '' -a sort_keys < <(
+      printf '%s\n' "${sort_keys[@]}" | sort -t'|' -k1,1n -k2,2nr
+      printf '\0'
+    )
+    for key in "${sort_keys[@]}"; do
+      local idx="${key##*|}"
+      sfn+=("${filenames[$idx]}")
+      ssz+=("${sizes[$idx]}")
+      sqt+=("${quants[$idx]}")
+    done
+    filenames=("${sfn[@]}")
+    sizes=("${ssz[@]}")
+    quants=("${sqt[@]}")
   fi
-  
-  # Find selected quantization
-  local selected_index=-1
+
+  # Display a rich colour-coded quantization table
+  echo -e "${BOLD}  Quant        Quality         Filename${RESET}"
+  echo   "  ----------------------------------------------------------------"
   for i in "${!quants[@]}"; do
-    if [[ "${quants[i]}" == "$choice" ]]; then
+    local label_text label_color label_info
+    label_info=$(get_quant_label "${quants[i]}")
+    IFS='|' read -r label_text label_color <<< "$label_info"
+    printf "  %-12s ${label_color}%-16s${RESET} %s\n" \
+      "${quants[i]}" "$label_text" "${filenames[i]}"
+  done
+  echo
+
+  # Build gum choose options with clean plain text (no ANSI -- gum handles its own styling)
+  # Include the full filename so duplicate quant names (e.g. two BF16 files) are distinguishable
+  local -a choose_items=()
+  for i in "${!quants[@]}"; do
+    local label_text label_info
+    label_info=$(get_quant_label "${quants[i]}")
+    label_text="${label_info%%|*}"
+    local item
+    printf -v item "%-12s  %-16s  %s" "${quants[i]}" "$label_text" "${filenames[i]}"
+    choose_items+=("$item")
+  done
+  choose_items+=("-- Back to results --" "-- Quit --")
+
+  local choice=""
+  choice=$(printf "%s\n" "${choose_items[@]}" | \
+    gum choose \
+      --header "Select a quantization to download:" \
+      --header.foreground 212 \
+      --cursor.foreground 212) || choice=""
+
+  case "$choice" in
+    "-- Back to results --"|"")
+      return 0
+      ;;
+    "-- Quit --")
+      exit 0
+      ;;
+  esac
+
+  # Map selected choose item back to its array index
+  local selected_index=-1
+  for i in "${!choose_items[@]}"; do
+    if [[ "${choose_items[i]}" == "$choice" ]]; then
       selected_index=$i
       break
     fi
   done
-  
-  if [[ $selected_index -ge 0 ]]; then
-    local filename="${filenames[selected_index]}"
-    
-    # Create model-specific directory
-    local sanitized_id
-    sanitized_id=$(echo "$model_id" | tr '/' '_')
-    local dest_dir="${MODELS_DIR}/${sanitized_id}"
-    
-    # Download with aria2c if available, otherwise curl
-    if check_dependency aria2c; then
-      download_aria2c_file "$model_id" "$filename" "$dest_dir"
-    else
-      download_gguf_file "$model_id" "$filename" "$dest_dir"
-    fi
-    
-    echo
-    gum style --foreground 82 "✓ Model ready to use!"
-    echo
-    gum style --foreground 212 "Saved to: ${BOLD}${dest_dir}${RESET}"
-    echo
-    gum style --bold "Run with:"
-    echo
-    echo "  llama-cli -m ${dest_dir}/${filename} -cnv -t 8 -c 8192 --temp 0.7"
-    echo
+
+  # Guard: ensure it's a valid quant index (not a sentinel item)
+  if [[ $selected_index -lt 0 ]] || [[ $selected_index -ge ${#quants[@]} ]]; then
+    return 0
+  fi
+
+  local filename="${filenames[$selected_index]}"
+  local quant="${quants[$selected_index]}"
+
+  # Confirm before downloading
+  echo
+  gum style \
+    --border rounded \
+    --border-foreground 212 \
+    --padding "0 2" \
+    "  File  : ${filename}" \
+    "  Quant : ${quant}"
+  echo
+
+  if ! gum confirm \
+    --affirmative "  Download  " \
+    --negative "  Cancel  " \
+    --default=true \
+    "Download this file?"; then
+    info "Download cancelled."
+    return 0
+  fi
+
+  # Perform the download
+  local sanitized_id
+  sanitized_id=$(echo "$model_id" | tr '/' '_')
+  local dest_dir="${MODELS_DIR}/${sanitized_id}"
+
+  echo
+  if check_dependency aria2c; then
+    download_aria2c_file "$model_id" "$filename" "$dest_dir"
+  else
+    download_gguf_file "$model_id" "$filename" "$dest_dir"
+  fi
+
+  # Success screen
+  echo
+  gum style \
+    --border double \
+    --border-foreground 82 \
+    --padding "1 2" \
+    --margin "1 0" \
+    "[OK]  Download Complete" \
+    "" \
+    "  Model : ${model_id}" \
+    "  File  : ${filename}" \
+    "  Path  : ${dest_dir}"
+  echo
+  gum style --foreground 245 "Run with:"
+  echo
+  echo "  llama-cli -m ${dest_dir}/${filename} -cnv -t 8 -c 8192 --temp 0.7"
+  echo
+
+  # Ask whether to keep browsing or exit
+  if gum confirm \
+    --affirmative "  Browse more  " \
+    --negative "  Exit  " \
+    --default=false \
+    "Download another model?"; then
+    return 0
+  else
+    exit 0
   fi
 }
 
 # ---------------------------------------------------------------------------
-# run_minimal_interactive — interactive mode with basic prompts
+# run_minimal_interactive -- interactive mode with basic prompts
 # ---------------------------------------------------------------------------
 run_minimal_interactive() {
   echo
-  echo -e "${BOLD}llama-models${RESET} — Interactive Model Browser"
+  echo -e "${BOLD}llama-models${RESET} -- Interactive Model Browser"
   echo
   
   # Prompt for search query
@@ -1319,7 +1483,7 @@ run_minimal_interactive() {
 }
 
 # ---------------------------------------------------------------------------
-# run_minimal_search — search and select models with bash select menu
+# run_minimal_search -- search and select models with bash select menu
 # Args: $1 = search query
 # ---------------------------------------------------------------------------
 run_minimal_search() {
@@ -1388,7 +1552,7 @@ run_minimal_search() {
     echo -e "${BOLD}Found ${#all_model_ids[@]} GGUF models:${RESET}"
     echo
     echo -e "${BOLD}#   Model ID                                Downloads   Variants${RESET}"
-    echo "─────────────────────────────────────────────────────────────────────────────"
+    echo "-----------------------------------------------------------------------------"
     
     for i in "${!all_model_ids[@]}"; do
       local metadata="${all_model_metadata[i]}"
@@ -1413,7 +1577,7 @@ run_minimal_search() {
     
     # Add pagination/quit options
     if [[ "$has_more" == "true" ]]; then
-      select_options+=("── Show more ──")
+      select_options+=("-- Show more --")
     fi
     select_options+=("Quit")
     
@@ -1428,7 +1592,7 @@ run_minimal_search() {
           echo
           info "Exiting."
           exit 0
-        elif [[ "$choice" == "── Show more ──" ]]; then
+        elif [[ "$choice" == "-- Show more --" ]]; then
           # Load next page
           offset=$((offset + limit))
           echo
@@ -1456,7 +1620,7 @@ run_minimal_search() {
     done
     
     # If we broke out of select to load more, continue the while loop
-    if [[ "$choice" == "── Show more ──" ]]; then
+    if [[ "$choice" == "-- Show more --" ]]; then
       continue
     else
       # If we selected a model, we returned above, so this should not happen
@@ -1466,7 +1630,7 @@ run_minimal_search() {
 }
 
 # ---------------------------------------------------------------------------
-# show_model_quantizations — display available quants and let user pick one
+# show_model_quantizations -- display available quants and let user pick one
 # Args: $1 = model JSON object
 #       $2 = model_id (for display)
 # ---------------------------------------------------------------------------
@@ -1536,7 +1700,7 @@ show_model_quantizations() {
   echo -e "${BOLD}Available quantizations:${RESET}"
   echo
   echo -e "${BOLD}#   Quant     Size        Quality     Filename${RESET}"
-  echo "─────────────────────────────────────────────────────────────────────────────"
+  echo "-----------------------------------------------------------------------------"
   
   for i in "${!filenames[@]}"; do
     local size_human
@@ -1624,7 +1788,7 @@ list_local_models() {
   echo -e "${BOLD}Downloaded Models${RESET}"
   echo
   echo -e "${BOLD}Model ID                                Quant      Size       Downloaded${RESET}"
-  echo "─────────────────────────────────────────────────────────────────────────────"
+  echo "-----------------------------------------------------------------------------"
   
   # Find all metadata.json files
   local found=0
@@ -1686,7 +1850,7 @@ list_local_models() {
 }
 
 # ---------------------------------------------------------------------------
-# sync_local_models — check for updates to downloaded models
+# sync_local_models -- check for updates to downloaded models
 # Compares local files against HuggingFace to detect:
 #   - New quantizations available
 #   - Files with different sizes (possibly fixed/corrupted)
@@ -1727,7 +1891,7 @@ sync_local_models() {
     hf_data=$(fetch_model_data "$model_id" 2>/dev/null)
     
     if [[ -z "$hf_data" ]]; then
-      echo -e "  ${RED}✗${RESET} Cannot fetch from HuggingFace (repo may be private or deleted)"
+      echo -e "  ${RED}?--${RESET} Cannot fetch from HuggingFace (repo may be private or deleted)"
       echo
       continue
     fi
@@ -1792,7 +1956,7 @@ sync_local_models() {
     fi
     
     if [[ "$has_changes" == "false" ]]; then
-      echo -e "  ${GREEN}✓${RESET} Up to date"
+      echo -e "  ${GREEN}[OK]${RESET} Up to date"
     fi
     
     echo
