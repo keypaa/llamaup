@@ -609,12 +609,12 @@ download_gguf_file() {
   # Fetch file size before starting download.
   # HuggingFace CDN strips Content-Length from HEAD on large files, but always
   # sets Content-Range when a byte-range is requested.
-  # Strategy: request byte 0-0 → parse "Content-Range: bytes 0-0/<total>" field.
+  # Format: "Content-Range: bytes 0-0/<total>" → $1=header $2=bytes $3=0-0/<total>
   local total_size=0
   local range_header
   range_header=$(curl -sI -L --max-redirs 10 -H "Range: bytes=0-0" "$url" 2>/dev/null | tr -d '\r')
   total_size=$(echo "$range_header" \
-    | awk 'tolower($1) == "content-range:" { split($2, a, "/"); print a[2]+0 }')
+    | awk 'tolower($1) == "content-range:" { split($3, a, "/"); print a[2]+0 }')
   # Fallback: Content-Length (works when no redirect strips it)
   if [[ -z "$total_size" ]] || [[ "$total_size" -eq 0 ]]; then
     total_size=$(echo "$range_header" \
@@ -695,12 +695,12 @@ download_aria2c_file() {
   # Fetch file size BEFORE starting aria2c.
   # HuggingFace CDN (Cloudflare) strips Content-Length from HEAD responses on
   # large files, but always sets Content-Range when a byte-range is requested.
-  # Strategy: request byte 0-0 → parse "Content-Range: bytes 0-0/<total>" field.
+  # Format: "Content-Range: bytes 0-0/<total>" → $1=header $2=bytes $3=0-0/<total>
   local total_size=0
   local range_header
   range_header=$(curl -sI -L --max-redirs 10 -H "Range: bytes=0-0" "$url" 2>/dev/null | tr -d '\r')
   total_size=$(echo "$range_header" \
-    | awk 'tolower($1) == "content-range:" { split($2, a, "/"); print a[2]+0 }')
+    | awk 'tolower($1) == "content-range:" { split($3, a, "/"); print a[2]+0 }')
   # Fallback: Content-Length (works when no redirect strips it)
   if [[ -z "$total_size" ]] || [[ "$total_size" -eq 0 ]]; then
     total_size=$(echo "$range_header" \
