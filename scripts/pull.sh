@@ -174,12 +174,36 @@ find_asset() {
 }
 
 # ---------------------------------------------------------------------------
-# download_file — download a URL to a destination path with tqdm-style progress
+# download_file — download a URL to a destination path with a live block progress bar
 # Args:
 #   $1 = url
 #   $2 = dest_path
 # Exits 1 on curl failure.
 # ---------------------------------------------------------------------------
+
+# _hr_bytes — format a byte count as a human-readable string (K / M / G)
+# Args: $1 = bytes (integer)
+_hr_bytes() {
+  local b="$1"
+  if   [[ "$b" -ge 1073741824 ]]; then awk "BEGIN {printf \"%.1fG\", $b/1073741824}"
+  elif [[ "$b" -ge 1048576    ]]; then awk "BEGIN {printf \"%.0fM\", $b/1048576}"
+  else                                  awk "BEGIN {printf \"%.0fK\", $b/1024}"
+  fi
+}
+
+# _build_bar — emit a block bar of bar_width chars filled to percent %
+# Args: $1 = percent (0-100), $2 = bar_width
+_build_bar() {
+  local pct="$1" width="$2"
+  local filled=$(( pct * width / 100 ))
+  local empty=$(( width - filled ))
+  local bar=""
+  local i
+  for (( i = 0; i < filled; i++ )); do bar+="█"; done
+  for (( i = 0; i < empty;  i++ )); do bar+="░"; done
+  printf '%s' "$bar"
+}
+
 download_file() {
   local url="$1"
   local dest_path="$2"
@@ -188,70 +212,81 @@ download_file() {
 
   echo -e "${CYAN}Downloading:${RESET} ${filename}"
 
-  # Use curl with custom progress output formatter
-  # Redirect stderr to stdout so we can parse it, redirect original stdout to fd 3
+  # ensure destination directory exists
+  mkdir -p "$(dirname "$dest_path")"
+
+  # -----------------------------------------------------------------------
+  # Fetch Content-Length by following all redirects with a HEAD request.
+  # Use awk to pick the LAST "content-length:" header line (case-insensitive,
+  # strips \r from CRLF HTTP headers).  Falls back to 0 if not present.
+  # -----------------------------------------------------------------------
+  local total_size=0
+  total_size=$(curl -sI -L --max-redirs 10 "$url" 2>/dev/null \
+    | tr -d '\r' \
+    | awk 'tolower($1) == "content-length:" { last = $2+0 } END { print (last ? last : 0) }')
+  : "${total_size:=0}"
+
+  # start curl quietly in background; redirect stderr so set -e is not triggered
+  curl -L -f -s -o "$dest_path" "$url" 2>/dev/null &
+  local curl_pid=$!
+
   local bar_width=30
   local last_percent=-1
-  local total_size=""
-  
-  {
-    curl -L -f -o "$dest_path" "$url" 2>&1 >&3 | \
-    while IFS= read -r line; do
-      # Parse curl's default progress output
-      # Format: "  45 124M   45 56.0M    0     0  56.9M      0  0:00:02  0:00:01  0:00:01 69.8M"
-      if [[ "$line" =~ ^[[:space:]]*([0-9]+)[[:space:]]+([0-9.]+[kMG]?)[[:space:]]+([0-9]+)[[:space:]]+([0-9.]+[kMG]?) ]]; then
-        local percent="${BASH_REMATCH[1]}"
-        total_size="${BASH_REMATCH[2]}"
-        local downloaded="${BASH_REMATCH[4]}"
-        
-        # Only update if percentage changed (reduce flicker)
-        if [[ "$percent" != "$last_percent" ]]; then
-          last_percent="$percent"
-          
-          # Build tqdm-style progress bar
-          local filled=$((percent * bar_width / 100))
-          local empty=$((bar_width - filled))
-          
-          local bar=""
-          for ((i=0; i<filled; i++)); do bar+="█"; done
-          for ((i=0; i<empty; i++)); do bar+="░"; done
-          
-          # Print tqdm-style progress (overwrite same line)
-          printf "\r${GREEN}%3d%%${RESET}|${CYAN}%s${RESET}| ${BOLD}%s${RESET}/${BOLD}%s${RESET}  " \
-            "$percent" "$bar" "$downloaded" "$total_size"
-        fi
-      fi
-    done
-  } 3>&1
-  
-  local exit_code=$?
-  
-  # If download succeeded, always show 100% completion
-  if [[ $exit_code -eq 0 ]] && [[ -f "$dest_path" ]] && [[ -s "$dest_path" ]]; then
-    # Build 100% bar
-    local bar=""
-    for ((i=0; i<bar_width; i++)); do bar+="█"; done
-    
-    # Get final file size if we didn't get total_size from curl
-    if [[ -z "$total_size" ]]; then
-      local bytes
-      bytes=$(stat -f%z "$dest_path" 2>/dev/null || stat -c%s "$dest_path" 2>/dev/null || echo "0")
-      if [[ "$bytes" -ge 1073741824 ]]; then
-        total_size="$(awk "BEGIN {printf \"%.1fG\", $bytes/1073741824}")"
-      elif [[ "$bytes" -ge 1048576 ]]; then
-        total_size="$(awk "BEGIN {printf \"%.0fM\", $bytes/1048576}")"
-      else
-        total_size="$(awk "BEGIN {printf \"%.0fK\", $bytes/1024}")"
-      fi
+  local spin_idx=0
+  local spin_chars=('-' '\' '|' '/')
+
+  # monitor file growth until curl exits
+  while kill -0 "$curl_pid" 2>/dev/null; do
+    local current_size=0
+    if [[ -f "$dest_path" ]]; then
+      # Linux stat first (WSL), then macOS fallback
+      current_size=$(stat -c%s "$dest_path" 2>/dev/null \
+                  || stat -f%z "$dest_path" 2>/dev/null \
+                  || echo 0)
     fi
-    
-    # Print final 100% line
+
+    local dl_str
+    dl_str="$(_hr_bytes "$current_size")"
+
+    if [[ "$total_size" =~ ^[0-9]+$ ]] && [[ "$total_size" -gt 0 ]]; then
+      # ---- determinate bar ----
+      local percent=$(( current_size * 100 / total_size ))
+      [[ "$percent" -gt 100 ]] && percent=100
+
+      if [[ "$percent" -ne "$last_percent" ]]; then
+        last_percent="$percent"
+        local bar tot_str
+        bar="$(_build_bar "$percent" "$bar_width")"
+        tot_str="$(_hr_bytes "$total_size")"
+        printf "\r${GREEN}%3d%%${RESET}|${CYAN}%s${RESET}| ${BOLD}%s${RESET}/${BOLD}%s${RESET}  " \
+          "$percent" "$bar" "$dl_str" "$tot_str"
+      fi
+    else
+      # ---- indeterminate spinner (size unknown) ----
+      local spin="${spin_chars[$((spin_idx % 4))]}"
+      (( spin_idx++ )) || true
+      printf "\r${CYAN}%s${RESET} Downloading... ${BOLD}%s${RESET}       " "$spin" "$dl_str"
+    fi
+
+    sleep 0.2
+  done
+
+  wait "$curl_pid"
+  local exit_code=$?
+
+  if [[ "$exit_code" -eq 0 ]] && [[ -f "$dest_path" ]] && [[ -s "$dest_path" ]]; then
+    # Final 100% line
+    local final_size final_str full_bar
+    final_size=$(stat -c%s "$dest_path" 2>/dev/null \
+              || stat -f%z "$dest_path" 2>/dev/null \
+              || echo 0)
+    final_str="$(_hr_bytes "$final_size")"
+    full_bar="$(_build_bar 100 "$bar_width")"
     printf "\r${GREEN}%3d%%${RESET}|${CYAN}%s${RESET}| ${BOLD}%s${RESET}/${BOLD}%s${RESET}  \n" \
-      "100" "$bar" "$total_size" "$total_size"
-    
+      "100" "$full_bar" "$final_str" "$final_str"
     success "Downloaded ${filename}"
   else
-    echo  # New line after progress bar
+    echo
     rm -f "$dest_path"
     error "Download failed from:\n  ${url}\n  → Check your internet connection."
   fi
@@ -383,6 +418,7 @@ main() {
   local dry_run=false
   local do_list=false
   local force=false
+  local dev_mode=false
   local gpu_map="${SCRIPT_DIR}/../configs/gpu_map.json"
   
   # Set up trap for cleanup on interrupt
@@ -399,6 +435,7 @@ main() {
       --dry-run)     dry_run=true       ; shift ;;
       --list)        do_list=true       ; shift ;;
       --force)       force=true         ; shift ;;
+      --dev-sm)      sm_version="$2" ; dev_mode=true ; force=true ; shift 2 ;;
       -h|--help)     usage ;;
       *)             error "Unknown option: $1. Run with --help for usage." ;;
     esac
@@ -420,6 +457,16 @@ main() {
     error "gpu_map.json not found at: ${gpu_map}\n  → Check your installation."
   fi
 
+  # --- dev mode banner ---
+  if [[ "$dev_mode" == "true" ]]; then
+    echo
+    echo -e "${YELLOW}╔══════════════════════════════════════════════╗${RESET}"
+    echo -e "${YELLOW}║  DEV MODE  --dev-sm ${sm_version}$(printf '%*s' $((28 - ${#sm_version})) '')║${RESET}"
+    echo -e "${YELLOW}║  GPU detection bypassed · force re-download  ║${RESET}"
+    echo -e "${YELLOW}╚══════════════════════════════════════════════╝${RESET}"
+    echo
+  fi
+
   # --- resolve SM version ---
   if [[ -z "$sm_version" ]]; then
     if [[ "$dry_run" == "true" ]]; then
@@ -437,8 +484,8 @@ main() {
       fi
       info "Detected GPU: ${first_gpu} (SM ${sm_version})"
     fi
-  else
-    # Validate user-provided SM version (always validate, even in dry-run)
+  elif [[ "$dev_mode" == "false" ]]; then
+    # Validate user-provided SM version (skip in dev mode)
     if ! validate_sm "$sm_version" "$gpu_map"; then
       error "Invalid SM version: ${sm_version}\n  → Valid SM versions: $(jq -r '.gpu_families | to_entries[] | .value.sm' "$gpu_map" | sort -n | paste -sd, -)\n  → Run ./scripts/detect.sh to see your GPU's SM version"
     fi

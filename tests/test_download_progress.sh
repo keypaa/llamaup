@@ -31,6 +31,13 @@ download_gguf_file \
   "tinyllama-1.1b-chat-v1.0.Q2_K.gguf" \
   "$test_dir"
 
+# Now test the pull.sh helper with a tiny public text file
+echo
+info "Testing pull.sh download_file helper"
+local testfile_url="https://www.google.com/robots.txt"
+local testfile_dest="${test_dir}/robots.txt"
+download_file "$testfile_url" "$testfile_dest"
+
 echo
 echo "Test complete! Check if you saw incremental progress above."
 echo "Cleaning up..."
