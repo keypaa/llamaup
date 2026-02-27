@@ -1100,6 +1100,7 @@ run_premium_interactive() {
       "Search models" \
       "Browse popular models" \
       "List local models" \
+      "Delete a model" \
       "Quit") || choice="Quit"
 
     case "$choice" in
@@ -1121,6 +1122,10 @@ run_premium_interactive() {
       "List local models")
         echo
         list_local_models
+        ;;
+      "Delete a model")
+        echo
+        delete_local_model
         ;;
       *)
         exit 0
@@ -1854,6 +1859,111 @@ list_local_models() {
   echo
   echo -e "${DIM}Press any key to return to menu...${RESET}"
   read -r -s -n 1
+}
+
+# ---------------------------------------------------------------------------
+# delete_local_model -- interactively select and delete a downloaded GGUF file
+# Presents a gum choose list of all .gguf files, asks for confirmation,
+# deletes the file, removes its entry from metadata.json, and cleans up
+# empty model directories.
+# ---------------------------------------------------------------------------
+delete_local_model() {
+  if [[ ! -d "$MODELS_DIR" ]] || [[ -z "$(ls -A "$MODELS_DIR" 2>/dev/null)" ]]; then
+    echo "No models downloaded yet."
+    echo
+    echo -e "${DIM}Press any key to return to menu...${RESET}"
+    read -r -s -n 1
+    return 0
+  fi
+
+  # Collect all .gguf files with display info
+  local -a file_paths=()
+  local -a display_items=()
+
+  while IFS= read -r -d '' gguf_file; do
+    local item_dir item_meta item_model_id item_filename item_size item_size_human
+    item_filename=$(basename "$gguf_file")
+    item_dir=$(dirname "$gguf_file")
+    item_meta="${item_dir}/metadata.json"
+
+    if [[ -f "$item_meta" ]]; then
+      item_model_id=$(jq -r '.model_id // ""' "$item_meta")
+    else
+      item_model_id=$(basename "$item_dir")
+    fi
+
+    item_size=$(stat -c%s "$gguf_file" 2>/dev/null || stat -f%z "$gguf_file" 2>/dev/null || echo 0)
+    item_size_human=$(format_size "$item_size")
+
+    file_paths+=("$gguf_file")
+    display_items+=("$(printf '%-42s  %-44s  %s' "${item_model_id:0:40}" "${item_filename:0:42}" "$item_size_human")")
+  done < <(find "$MODELS_DIR" -type f -name "*.gguf" -print0 2>/dev/null | sort -z)
+
+  if [[ ${#file_paths[@]} -eq 0 ]]; then
+    echo "No GGUF model files found."
+    echo
+    echo -e "${DIM}Press any key to return to menu...${RESET}"
+    read -r -s -n 1
+    return 0
+  fi
+
+  local choice
+  choice=$(gum choose \
+    --header "Select a model file to delete:" \
+    --header.foreground 196 \
+    --cursor.foreground 196 \
+    "${display_items[@]}") || { echo; return 0; }
+
+  # Match selection back to file path
+  local del_path=""
+  local idx
+  for idx in "${!display_items[@]}"; do
+    if [[ "${display_items[$idx]}" == "$choice" ]]; then
+      del_path="${file_paths[$idx]}"
+      break
+    fi
+  done
+
+  [[ -z "$del_path" ]] && return 0
+
+  local del_filename del_dir del_meta
+  del_filename=$(basename "$del_path")
+  del_dir=$(dirname "$del_path")
+  del_meta="${del_dir}/metadata.json"
+
+  # Confirmation
+  echo
+  warn "About to permanently delete: ${BOLD}${del_filename}${RESET}"
+  echo "  Path: $del_path"
+  echo
+
+  if ! gum confirm "Delete this file?" \
+      --default=false \
+      --prompt.foreground=196 \
+      --selected.background=196 2>/dev/null; then
+    info "Cancelled."
+    sleep 1
+    return 0
+  fi
+
+  rm -f "$del_path"
+
+  # Remove entry from metadata.json
+  if [[ -f "$del_meta" ]]; then
+    local tmp_meta="${del_meta}.tmp"
+    jq --arg fn "$del_filename" \
+      'del(.downloads[] | select(.filename == $fn))' \
+      "$del_meta" > "$tmp_meta" && mv "$tmp_meta" "$del_meta"
+  fi
+
+  # Remove model dir if no .gguf files remain
+  if [[ -z "$(find "$del_dir" -maxdepth 1 -name '*.gguf' 2>/dev/null)" ]]; then
+    rm -rf "$del_dir"
+  fi
+
+  echo
+  success "Deleted: ${BOLD}${del_filename}${RESET}"
+  sleep 1
 }
 
 # ---------------------------------------------------------------------------
