@@ -1765,7 +1765,10 @@ list_local_models() {
     echo "No models downloaded yet."
     echo
     echo "Download models with: llama-models search <query>"
-    exit 0
+    echo
+    echo -e "${DIM}Press any key to return to menu...${RESET}"
+    read -r -s -n 1
+    return 0
   fi
   
   echo
@@ -1829,8 +1832,10 @@ list_local_models() {
     echo -e "${DIM}Note: Models downloaded before metadata tracking won't appear here.${RESET}"
     echo -e "${DIM}Re-download to generate metadata.${RESET}"
   fi
-  
+
   echo
+  echo -e "${DIM}Press any key to return to menu...${RESET}"
+  read -r -s -n 1
 }
 
 # ---------------------------------------------------------------------------
