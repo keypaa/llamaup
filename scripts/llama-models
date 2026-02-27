@@ -1349,24 +1349,29 @@ show_premium_model_quantizations() {
     quants=("${sqt[@]}")
   fi
 
-  # Build gum choose options — embed ANSI colour codes so quality is still
-  # colour-coded inside the interactive menu (no separate static table needed).
-  local -a choose_items=()
+  # Display a rich colour-coded quantization table once.
+  echo -e "${BOLD}  Quant        Quality         Filename${RESET}"
+  echo   "  ----------------------------------------------------------------"
   for i in "${!quants[@]}"; do
     local label_text label_color label_info
     label_info=$(get_quant_label "${quants[i]}")
     IFS='|' read -r label_text label_color <<< "$label_info"
-    local item
-    printf -v item "%-12s  ${label_color}%-16s${RESET}  %s" \
+    printf "  %-12s ${label_color}%-16s${RESET} %s\n" \
       "${quants[i]}" "$label_text" "${filenames[i]}"
-    choose_items+=("$item")
+  done
+  echo
+
+  # Now build a numeric menu; user picks the row number from the table above.
+  local -a choose_items=()
+  for i in "${!quants[@]}"; do
+    choose_items+=("$((i+1))")
   done
   choose_items+=("-- Back to results --" "-- Quit --")
 
   local choice=""
   choice=$(printf "%s\n" "${choose_items[@]}" | \
     gum choose \
-      --header "$(printf '%-12s  %-16s  %s' 'Quant' 'Quality' 'Filename')" \
+      --header "Select a number (see table above):" \
       --header.foreground 212 \
       --cursor.foreground 212) || choice=""
 
@@ -1379,16 +1384,16 @@ show_premium_model_quantizations() {
       ;;
   esac
 
-  # Map selected choose item back to its array index
+  # Interpret the numeric choice; sentinel strings are handled above.
   local selected_index=-1
-  for i in "${!choose_items[@]}"; do
-    if [[ "${choose_items[i]}" == "$choice" ]]; then
-      selected_index=$i
-      break
-    fi
-  done
+  if [[ "$choice" =~ ^[0-9]+$ ]]; then
+    selected_index=$((choice - 1))
+  else
+    # non-numeric (e.g. "-- Back to results --" or "-- Quit --")
+    return 0
+  fi
 
-  # Guard: ensure it's a valid quant index (not a sentinel item)
+  # Guard: ensure it's within the range of quant entries
   if [[ $selected_index -lt 0 ]] || [[ $selected_index -ge ${#quants[@]} ]]; then
     return 0
   fi
