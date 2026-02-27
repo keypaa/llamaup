@@ -89,9 +89,8 @@ jobs:
             gh api \
               --method POST \
               "/repos/${REPO}/dispatches" \
-              -f event_type=new-llama-release \
-              -F "client_payload[version]=$tag" \
-              -F "client_payload[is_backfill]=true"
+              --input - <<< "$(jq -n --arg v "$tag" \
+                '{"event_type":"new-llama-release","client_payload":{"version":$v,"is_backfill":true}}')"
             COUNT=$(( COUNT + 1 ))
             # Small delay to avoid flooding the dispatch queue
             sleep 2

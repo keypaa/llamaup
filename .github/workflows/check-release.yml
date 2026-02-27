@@ -72,7 +72,7 @@ jobs:
           gh api \
             --method POST \
             /repos/${{ github.repository }}/dispatches \
-            -f event_type=new-llama-release \
-            -f client_payload='{"version":"'"$TAG"'"}'
+            --input - <<< "$(jq -n --arg v "$TAG" \
+              '{"event_type":"new-llama-release","client_payload":{"version":$v}}')"    
 
           echo "Dispatched build for $TAG"
