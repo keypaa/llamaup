@@ -413,7 +413,10 @@ jobs:
 
           # Backfill releases must not steal the "Latest" badge — the newest
           # version is explicitly promoted via fix-latest.yml after backfill.
+          # Also explicitly set --prerelease=false; without it, --latest=false
+          # causes gh to mark the release as prerelease which blocks promotion.
           LATEST_FLAG="--latest"
+          PRERELEASE_FLAG="--prerelease=false"
           if [[ "${{ needs.resolve-version.outputs.is_backfill }}" == "true" ]]; then
             LATEST_FLAG="--latest=false"
           fi
@@ -423,5 +426,6 @@ jobs:
             --title "llama.cpp ${VERSION}" \
             --notes "$BODY" \
             $LATEST_FLAG \
+            $PRERELEASE_FLAG \
             /tmp/release-assets/*.tar.gz \
             /tmp/release-assets/*.sha256
