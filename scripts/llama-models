@@ -1361,17 +1361,21 @@ show_premium_model_quantizations() {
   done
   echo
 
-  # Now build a numeric menu; user picks the row number from the table above.
+  # gum choose with plain quant + filename (no ANSI — gum strips them anyway).
+  # The colored table above already gave the user quality info; the menu just
+  # lets them pick directly without a numeric indirection.
   local -a choose_items=()
   for i in "${!quants[@]}"; do
-    choose_items+=("$((i+1))")
+    local item
+    printf -v item "%-12s  %s" "${quants[i]}" "${filenames[i]}"
+    choose_items+=("$item")
   done
   choose_items+=("-- Back to results --" "-- Quit --")
 
   local choice=""
   choice=$(printf "%s\n" "${choose_items[@]}" | \
     gum choose \
-      --header "Select a number (see table above):" \
+      --header "Select a quantization to download:" \
       --header.foreground 212 \
       --cursor.foreground 212) || choice=""
 
@@ -1384,16 +1388,16 @@ show_premium_model_quantizations() {
       ;;
   esac
 
-  # Interpret the numeric choice; sentinel strings are handled above.
+  # Map choice back to its array index by matching the generated item string.
   local selected_index=-1
-  if [[ "$choice" =~ ^[0-9]+$ ]]; then
-    selected_index=$((choice - 1))
-  else
-    # non-numeric (e.g. "-- Back to results --" or "-- Quit --")
-    return 0
-  fi
+  for i in "${!choose_items[@]}"; do
+    if [[ "${choose_items[i]}" == "$choice" ]]; then
+      selected_index=$i
+      break
+    fi
+  done
 
-  # Guard: ensure it's within the range of quant entries
+  # Guard: ensure it's a valid quant index (not a sentinel)
   if [[ $selected_index -lt 0 ]] || [[ $selected_index -ge ${#quants[@]} ]]; then
     return 0
   fi
