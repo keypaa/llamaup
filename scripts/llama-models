@@ -533,62 +533,51 @@ show_download_progress() {
   local dest_path="$2"
   local total_size="$3"
   local bar_width=30
-  local last_size=0
+  local last_percent=-1
+  local spin_idx=0
+  local spin_chars=('-' '\' '|' '/')
 
   while kill -0 "$pid" 2>/dev/null; do
+    local current_size=0
     if [[ -f "$dest_path" ]]; then
-      local current_size
-      current_size=$(stat -f%z "$dest_path" 2>/dev/null || stat -c%s "$dest_path" 2>/dev/null || echo "0")
-
-      if [[ "$current_size" != "$last_size" ]]; then
-        last_size="$current_size"
-
-        # Calculate percentage
-        local percent=0
-        if [[ "$total_size" -gt 0 ]]; then
-          percent=$((current_size * 100 / total_size))
-        fi
-
-        # Build progress bar
-        local filled=$((percent * bar_width / 100))
-        local empty=$((bar_width - filled))
-        local bar=""
-        local i
-
-        for ((i=0; i<filled; i++)); do bar+="#"; done
-        for ((i=0; i<empty; i++)); do bar+="."; done
-
-        # Format sizes
-        local downloaded_str
-        if [[ "$current_size" -ge 1073741824 ]]; then
-          downloaded_str="$(awk "BEGIN {printf \"%.1fG\", $current_size/1073741824}")"
-        elif [[ "$current_size" -ge 1048576 ]]; then
-          downloaded_str="$(awk "BEGIN {printf \"%.0fM\", $current_size/1048576}")"
-        else
-          downloaded_str="$(awk "BEGIN {printf \"%.0fK\", $current_size/1024}")"
-        fi
-
-        local total_str=""
-        if [[ "$total_size" -gt 0 ]]; then
-          if [[ "$total_size" -ge 1073741824 ]]; then
-            total_str="$(awk "BEGIN {printf \"%.1fG\", $total_size/1073741824}")"
-          elif [[ "$total_size" -ge 1048576 ]]; then
-            total_str="$(awk "BEGIN {printf \"%.0fM\", $total_size/1048576}")"
-          else
-            total_str="$(awk "BEGIN {printf \"%.0fK\", $total_size/1024}")"
-          fi
-        fi
-
-        # Display progress
-        if [[ -n "$total_str" ]]; then
-          printf "\r${GREEN}%3d%%${RESET}|${CYAN}%s${RESET}| ${BOLD}%s${RESET}/${BOLD}%s${RESET}  " \
-            "$percent" "$bar" "$downloaded_str" "$total_str"
-        else
-          printf "\r${CYAN}Downloading...${RESET} ${BOLD}%s${RESET}  " "$downloaded_str"
-        fi
-      fi
+      current_size=$(stat -c%s "$dest_path" 2>/dev/null \
+                  || stat -f%z "$dest_path" 2>/dev/null \
+                  || echo 0)
     fi
-    sleep 0.5
+
+    # human-readable downloaded size
+    local dl_str
+    if   [[ "$current_size" -ge 1073741824 ]]; then dl_str="$(awk "BEGIN {printf \"%.1fG\", $current_size/1073741824}")"
+    elif [[ "$current_size" -ge 1048576    ]]; then dl_str="$(awk "BEGIN {printf \"%.0fM\", $current_size/1048576}")"
+    else                                               dl_str="$(awk "BEGIN {printf \"%.0fK\", $current_size/1024}")"
+    fi
+
+    if [[ "$total_size" =~ ^[0-9]+$ ]] && [[ "$total_size" -gt 0 ]]; then
+      local percent=$(( current_size * 100 / total_size ))
+      [[ "$percent" -gt 100 ]] && percent=100
+
+      if [[ "$percent" -ne "$last_percent" ]]; then
+        last_percent="$percent"
+        local filled=$(( percent * bar_width / 100 ))
+        local empty=$(( bar_width - filled ))
+        local bar="" i
+        for (( i = 0; i < filled; i++ )); do bar+="█"; done
+        for (( i = 0; i < empty;  i++ )); do bar+="░"; done
+        local tot_str
+        if   [[ "$total_size" -ge 1073741824 ]]; then tot_str="$(awk "BEGIN {printf \"%.1fG\", $total_size/1073741824}")"
+        elif [[ "$total_size" -ge 1048576    ]]; then tot_str="$(awk "BEGIN {printf \"%.0fM\", $total_size/1048576}")"
+        else                                            tot_str="$(awk "BEGIN {printf \"%.0fK\", $total_size/1024}")"
+        fi
+        printf "\r${GREEN}%3d%%${RESET}|${CYAN}%s${RESET}| ${BOLD}%s${RESET}/${BOLD}%s${RESET}  " \
+          "$percent" "$bar" "$dl_str" "$tot_str"
+      fi
+    else
+      local spin="${spin_chars[$((spin_idx % 4))]}"
+      (( spin_idx++ )) || true
+      printf "\r${CYAN}%s${RESET} Downloading... ${BOLD}%s${RESET}       " "$spin" "$dl_str"
+    fi
+
+    sleep 0.2
   done
 }
 
@@ -616,16 +605,17 @@ download_gguf_file() {
   
   # Download with curl and custom progress bar
   # Strategy: Start curl in background, monitor file size in real-time
-  
-  # Start download in background, silently
-  curl -L -f -s -o "$dest_path" "$url" &
-  local curl_pid=$!
-  
-  # Monitor progress while curl is running
-  local total_size=0
 
-  # Try to get total size from Content-Length header
-  total_size=$(curl -sI -L "$url" | grep -i content-length | tail -1 | awk '{print $2}' | tr -d '\r')
+  # Fetch Content-Length before starting download (follow redirects, strip \r)
+  local total_size=0
+  total_size=$(curl -sI -L --max-redirs 10 "$url" 2>/dev/null \
+    | tr -d '\r' \
+    | awk 'tolower($1) == "content-length:" { last = $2+0 } END { print (last ? last : 0) }')
+  : "${total_size:=0}"
+
+  # Start download in background, silently
+  curl -L -f -s -o "$dest_path" "$url" 2>/dev/null &
+  local curl_pid=$!
 
   show_download_progress "$curl_pid" "$dest_path" "$total_size"
   
@@ -635,26 +625,19 @@ download_gguf_file() {
   local exit_code=$?
   
   if [[ $exit_code -eq 0 ]] && [[ -f "$dest_path" ]] && [[ -s "$dest_path" ]]; then
-    # Show 100% completion
-    local bar=""
-    local i
-    for ((i=0; i<30; i++)); do bar+="#"; done
-    
-    if [[ -z "$total_size" ]]; then
-      local bytes
-      bytes=$(stat -f%z "$dest_path" 2>/dev/null || stat -c%s "$dest_path" 2>/dev/null || echo "0")
-      if [[ "$bytes" -ge 1073741824 ]]; then
-        total_size="$(awk "BEGIN {printf \"%.1fG\", $bytes/1073741824}")"
-      elif [[ "$bytes" -ge 1048576 ]]; then
-        total_size="$(awk "BEGIN {printf \"%.0fM\", $bytes/1048576}")"
-      else
-        total_size="$(awk "BEGIN {printf \"%.0fK\", $bytes/1024}")"
-      fi
+    # Show 100% completion bar
+    local final_size bar i
+    final_size=$(stat -c%s "$dest_path" 2>/dev/null || stat -f%z "$dest_path" 2>/dev/null || echo 0)
+    bar=""
+    for (( i = 0; i < 30; i++ )); do bar+="█"; done
+    local final_str
+    if   [[ "$final_size" -ge 1073741824 ]]; then final_str="$(awk "BEGIN {printf \"%.1fG\", $final_size/1073741824}")"
+    elif [[ "$final_size" -ge 1048576    ]]; then final_str="$(awk "BEGIN {printf \"%.0fM\", $final_size/1048576}")"
+    else                                           final_str="$(awk "BEGIN {printf \"%.0fK\", $final_size/1024}")"
     fi
-    
     printf "\r${GREEN}%3d%%${RESET}|${CYAN}%s${RESET}| ${BOLD}%s${RESET}/${BOLD}%s${RESET}  \n" \
-      "100" "$bar" "$total_size" "$total_size"
-    
+      "100" "$bar" "$final_str" "$final_str"
+
     echo
     success "Downloaded to: ${dest_path}"
     
@@ -726,9 +709,12 @@ download_aria2c_file() {
     "$url" &
   local aria_pid=$!
 
-  # Try to get total size from Content-Length header
+  # Fetch Content-Length before kicking off aria2c (follow redirects, strip \r)
   local total_size=0
-  total_size=$(curl -sI -L "$url" | grep -i content-length | tail -1 | awk '{print $2}' | tr -d '\r')
+  total_size=$(curl -sI -L --max-redirs 10 "$url" 2>/dev/null \
+    | tr -d '\r' \
+    | awk 'tolower($1) == "content-length:" { last = $2+0 } END { print (last ? last : 0) }')
+  : "${total_size:=0}"
 
   show_download_progress "$aria_pid" "$dest_path" "$total_size"
 
