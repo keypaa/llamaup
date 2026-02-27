@@ -511,6 +511,7 @@ main() {
     echo -e "    5. Extract to ${install_dir}"
     echo -e "    6. Symlink llama-cli, llama-server, llama-bench"
     echo -e "    7. Set executable permissions (chmod 755) on installed binaries"
+    echo -e "    8. Copy llama-models to ${install_dir%/*}/llama-models"
     echo
     exit 0
   fi
@@ -581,17 +582,26 @@ main() {
   # --- install ---
   install_binary "$tmp_archive" "$versioned_dir"
   rm -f "$tmp_archive"
-  
+
   # Clear cleanup variable after successful install
   CLEANUP_FILE=""
+
+  # --- install llama-models into the same bin dir ---
+  local bin_parent_dir
+  bin_parent_dir="$(dirname "$install_dir")"
+  local llama_models_src="${SCRIPT_DIR}/llama-models"
+  if [[ -f "$llama_models_src" ]]; then
+    cp "$llama_models_src" "${bin_parent_dir}/llama-models"
+    chmod 755 "${bin_parent_dir}/llama-models"
+    success "Installed llama-models → ${bin_parent_dir}/llama-models"
+  else
+    warn "llama-models not found at ${llama_models_src} — skipping."
+  fi
 
   echo
   success "Installed to: ${versioned_dir}"
   echo
   echo -e "  ${BOLD}Next steps:${RESET}"
-  # Show the actual resolved path, not the variable
-  local bin_parent_dir
-  bin_parent_dir="$(dirname "$install_dir")"
   echo -e "    1. Add to PATH: ${CYAN}export PATH=\"${bin_parent_dir}:\$PATH\"${RESET}"
   echo -e "    2. Run with auto-download: ${CYAN}llama-cli -hf bartowski/Qwen2.5-7B-Instruct-GGUF:Q4_K_M -cnv${RESET}"
   echo
@@ -599,6 +609,7 @@ main() {
   echo -e "    llama-cli --help                    # Command-line inference (see --help for all flags)"
   echo -e "    llama-server -m model.gguf          # Start HTTP API server (recommended for chat)"
   echo -e "    llama-bench -m model.gguf           # Benchmark performance"
+  echo -e "    llama-models                        # Browse & download GGUF models from HuggingFace"
   echo
   echo -e "  ${BOLD}Quick examples:${RESET}"
   echo -e "    llama-cli -hf user/repo:Q4_K_M -cnv             # Auto-download + interactive chat"
@@ -609,4 +620,7 @@ main() {
   echo
 }
 
-main "$@"
+# Only invoke main when executed directly (not when sourced for function reuse)
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
+fi

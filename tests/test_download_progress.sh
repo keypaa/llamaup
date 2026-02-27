@@ -2,6 +2,9 @@
 # Quick test of download progress fix
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 echo "Testing download progress in real-time..."
 echo
 echo "This will download a small GGUF file and show progress updates."
@@ -11,8 +14,15 @@ echo "Press Ctrl+C within 5 seconds to cancel, or wait to continue..."
 sleep 5
 
 # Source the llama-models script to get the download function
-source ./scripts/llama-models 2>/dev/null || {
+source "${REPO_ROOT}/scripts/llama-models" 2>/dev/null || {
   echo "Error: Could not source scripts/llama-models"
+  exit 1
+}
+
+# Source pull.sh to get download_file, info, success helpers
+# pull.sh has a source-guard so main() will NOT be called
+source "${REPO_ROOT}/scripts/pull.sh" 2>/dev/null || {
+  echo "Error: Could not source scripts/pull.sh"
   exit 1
 }
 
@@ -31,11 +41,11 @@ download_gguf_file \
   "tinyllama-1.1b-chat-v1.0.Q2_K.gguf" \
   "$test_dir"
 
-# Now test the pull.sh helper with a tiny public text file
+# Now test the pull.sh download_file helper with a small public file
 echo
 info "Testing pull.sh download_file helper"
-local testfile_url="https://www.google.com/robots.txt"
-local testfile_dest="${test_dir}/robots.txt"
+testfile_url="https://www.google.com/robots.txt"
+testfile_dest="${test_dir}/robots.txt"
 download_file "$testfile_url" "$testfile_dest"
 
 echo
