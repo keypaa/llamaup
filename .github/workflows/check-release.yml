@@ -1,0 +1,78 @@
+# ---------------------------------------------------------------------------
+# check-release.yml
+#
+# Lightweight poller that runs every 30 minutes and checks whether
+# ggerganov/llama.cpp has published a release that we haven't built yet.
+# If a new tag is found it fires a repository_dispatch event which
+# triggers build.yml → the full build/smoke-test/release pipeline.
+#
+# No build containers are spun up here — this job costs ~5s of ubuntu runner
+# time per poll cycle.
+# ---------------------------------------------------------------------------
+name: Check for new llama.cpp release
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'    # every 30 minutes; llama.cpp releases every 1-3h
+  workflow_dispatch:           # allow manual trigger for testing
+
+# Cancel in-flight poll if a newer one is already queued (avoids pile-up)
+concurrency:
+  group: check-release
+  cancel-in-progress: true
+
+permissions:
+  contents: write   # required to create repository_dispatch events
+
+jobs:
+  check:
+    name: Check upstream llama.cpp for new release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Fetch latest llama.cpp release tag
+        id: upstream
+        run: |
+          TAG=$(curl -fsSL \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/ggerganov/llama.cpp/releases/latest \
+            | jq -r '.tag_name')
+
+          if [[ -z "$TAG" || "$TAG" == "null" ]]; then
+            echo "ERROR: could not resolve latest llama.cpp tag" >&2
+            exit 1
+          fi
+
+          echo "Latest upstream tag: $TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Check if this version is already in our releases
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.upstream.outputs.tag }}"
+
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release $TAG already exists — nothing to do."
+            echo "needs_build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "New release detected: $TAG — triggering build."
+            echo "needs_build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Trigger build workflow via repository_dispatch
+        if: steps.check.outputs.needs_build == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.upstream.outputs.tag }}"
+
+          gh api \
+            --method POST \
+            /repos/${{ github.repository }}/dispatches \
+            -f event_type=new-llama-release \
+            -f client_payload='{"version":"'"$TAG"'"}'
+
+          echo "Dispatched build for $TAG"
