@@ -1,0 +1,121 @@
+# ---------------------------------------------------------------------------
+# backfill.yml
+#
+# One-shot workflow: build the last N llama.cpp releases that we haven't
+# published yet.  All backfill releases are created with --latest=false so
+# they never steal the "Latest" badge from the true newest release.
+#
+# After all builds complete, run fix-latest.yml to promote the correct tag.
+# ---------------------------------------------------------------------------
+name: Backfill historical llama.cpp releases
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'How many recent llama.cpp releases to back-fill (default: 50)'
+        required: false
+        default: '50'
+
+permissions:
+  contents: write
+
+jobs:
+  dispatch:
+    name: Dispatch backfill builds
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Fetch last ${{ github.event.inputs.limit }} llama.cpp tags
+        id: tags
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LIMIT="${{ github.event.inputs.limit || '50' }}"
+
+          # GitHub returns releases newest-first; we reverse to oldest-first so
+          # builds are queued in chronological order (cosmetic only — all are
+          # is_backfill=true so none will steal Latest).
+          TAGS=$(gh api \
+            "/repos/ggerganov/llama.cpp/releases?per_page=${LIMIT}&page=1" \
+            --jq '[.[].tag_name] | reverse | .[]')
+
+          if [[ -z "$TAGS" ]]; then
+            echo "ERROR: could not fetch llama.cpp releases" >&2
+            exit 1
+          fi
+
+          # Also capture the newest tag (last in the reversed list = newest upstream)
+          NEWEST=$(echo "$TAGS" | tail -n 1)
+
+          echo "Fetched $(echo "$TAGS" | wc -l) tags. Newest: $NEWEST"
+          # Newline-delimited list → single-line JSON array for the next step
+          TAGS_JSON=$(echo "$TAGS" | jq -Rsc 'split("\n") | map(select(length > 0))')
+          echo "tags_json=$TAGS_JSON" >> "$GITHUB_OUTPUT"
+          echo "newest=$NEWEST"       >> "$GITHUB_OUTPUT"
+
+      - name: Filter tags we haven't built yet
+        id: filter
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAGS_JSON='${{ steps.tags.outputs.tags_json }}'
+          REPO="${{ github.repository }}"
+
+          MISSING=()
+          while IFS= read -r tag; do
+            if gh release view "$tag" --repo "$REPO" >/dev/null 2>&1; then
+              echo "  SKIP $tag (already released)"
+            else
+              echo "  QUEUE $tag"
+              MISSING+=("$tag")
+            fi
+          done < <(echo "$TAGS_JSON" | jq -r '.[]')
+
+          echo "Tags to build: ${#MISSING[@]}"
+          MISSING_JSON=$(printf '%s\n' "${MISSING[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))')
+          echo "missing_json=$MISSING_JSON" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch a build for each missing tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          MISSING_JSON='${{ steps.filter.outputs.missing_json }}'
+          REPO="${{ github.repository }}"
+
+          COUNT=0
+          while IFS= read -r tag; do
+            echo "Dispatching build for $tag …"
+            gh api \
+              --method POST \
+              "/repos/${REPO}/dispatches" \
+              -f event_type=new-llama-release \
+              -F "client_payload[version]=$tag" \
+              -F "client_payload[is_backfill]=true"
+            COUNT=$(( COUNT + 1 ))
+            # Small delay to avoid flooding the dispatch queue
+            sleep 2
+          done < <(echo "$MISSING_JSON" | jq -r '.[]')
+
+          echo "Dispatched $COUNT builds."
+
+      - name: Print summary
+        run: |
+          NEWEST="${{ steps.tags.outputs.newest }}"
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          ## Backfill dispatched
+
+          All builds use \`is_backfill=true\` → **no release will be marked as Latest**.
+
+          ### Next step — promote the newest release
+
+          Once all builds have finished, run the **fix-latest** workflow:
+
+          > **Actions → Fix latest release → Run workflow → tag:** \`$NEWEST\`
+
+          Or via CLI:
+          \`\`\`bash
+          gh workflow run fix-latest.yml --field tag=$NEWEST
+          \`\`\`
+          EOF
+          echo "Newest tag to promote: $NEWEST"

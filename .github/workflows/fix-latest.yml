@@ -1,0 +1,46 @@
+# ---------------------------------------------------------------------------
+# fix-latest.yml
+#
+# One-click workflow to promote a specific release to "Latest" in GitHub
+# Releases.  Run this once after a backfill completes to ensure the newest
+# llama.cpp version has the Latest badge.
+# ---------------------------------------------------------------------------
+name: Fix latest release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to mark as Latest (e.g. b5000)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  fix-latest:
+    name: Promote ${{ github.event.inputs.tag }} to Latest
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Verify release exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.inputs.tag }}"
+          if ! gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "ERROR: release '$TAG' does not exist in ${{ github.repository }}" >&2
+            echo "Check the tag name and ensure the build has finished." >&2
+            exit 1
+          fi
+          echo "Release $TAG found."
+
+      - name: Set as Latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.inputs.tag }}"
+          gh release edit "$TAG" \
+            --repo "${{ github.repository }}" \
+            --latest
+          echo "✓ $TAG is now the Latest release."

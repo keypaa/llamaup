@@ -22,6 +22,11 @@ on:
         required: false
         default: false
         type: boolean
+      is_backfill:
+        description: 'Mark release as non-latest (used by backfill.yml for historical versions)'
+        required: false
+        default: false
+        type: boolean
 
   repository_dispatch:
     types: [new-llama-release]    # external webhook trigger
@@ -31,6 +36,12 @@ on:
 # ---------------------------------------------------------------------------
 permissions:
   contents: write
+
+# One run per llama.cpp version; duplicate triggers for the same tag are
+# cancelled so backfill dispatches never produce duplicate releases.
+concurrency:
+  group: build-${{ github.event.inputs.llama_version || github.event.client_payload.version || 'latest' }}
+  cancel-in-progress: false   # queue, don't cancel — let each version finish
 
 # ---------------------------------------------------------------------------
 # Jobs
@@ -61,6 +72,7 @@ jobs:
       version: ${{ steps.resolve.outputs.version }}
       already_built: ${{ steps.check.outputs.already_built }}
       sm_matrix: ${{ steps.matrix.outputs.sm_matrix }}
+      is_backfill: ${{ steps.resolve.outputs.is_backfill }}
 
     steps:
       - name: Resolve llama.cpp version
@@ -77,6 +89,9 @@ jobs:
 
           echo "Resolved version: $VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          IS_BACKFILL="${{ github.event.inputs.is_backfill || github.event.client_payload.is_backfill || 'false' }}"
+          echo "is_backfill=$IS_BACKFILL" >> "$GITHUB_OUTPUT"
 
       - name: Check if release already exists
         id: check
@@ -396,9 +411,17 @@ jobs:
           EOF
           )
 
+          # Backfill releases must not steal the "Latest" badge — the newest
+          # version is explicitly promoted via fix-latest.yml after backfill.
+          LATEST_FLAG="--latest"
+          if [[ "${{ needs.resolve-version.outputs.is_backfill }}" == "true" ]]; then
+            LATEST_FLAG="--latest=false"
+          fi
+
           gh release create "$VERSION" \
             --repo "${{ github.repository }}" \
             --title "llama.cpp ${VERSION}" \
             --notes "$BODY" \
+            $LATEST_FLAG \
             /tmp/release-assets/*.tar.gz \
             /tmp/release-assets/*.sha256
