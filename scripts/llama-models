@@ -606,11 +606,20 @@ download_gguf_file() {
   # Download with curl and custom progress bar
   # Strategy: Start curl in background, monitor file size in real-time
 
-  # Fetch Content-Length before starting download (follow redirects, strip \r)
+  # Fetch file size before starting download.
+  # HuggingFace CDN strips Content-Length from HEAD on large files, but always
+  # sets Content-Range when a byte-range is requested.
+  # Strategy: request byte 0-0 → parse "Content-Range: bytes 0-0/<total>" field.
   local total_size=0
-  total_size=$(curl -sI -L --max-redirs 10 "$url" 2>/dev/null \
-    | tr -d '\r' \
-    | awk 'tolower($1) == "content-length:" { last = $2+0 } END { print (last ? last : 0) }')
+  local range_header
+  range_header=$(curl -sI -L --max-redirs 10 -H "Range: bytes=0-0" "$url" 2>/dev/null | tr -d '\r')
+  total_size=$(echo "$range_header" \
+    | awk 'tolower($1) == "content-range:" { split($2, a, "/"); print a[2]+0 }')
+  # Fallback: Content-Length (works when no redirect strips it)
+  if [[ -z "$total_size" ]] || [[ "$total_size" -eq 0 ]]; then
+    total_size=$(echo "$range_header" \
+      | awk 'tolower($1) == "content-length:" { last = $2+0 } END { print (last ? last : 0) }')
+  fi
   : "${total_size:=0}"
 
   # Start download in background, silently
@@ -682,7 +691,23 @@ download_aria2c_file() {
   info "From: ${model_id}"
   info "Using aria2c (16 connections)"
   echo
-  
+
+  # Fetch file size BEFORE starting aria2c.
+  # HuggingFace CDN (Cloudflare) strips Content-Length from HEAD responses on
+  # large files, but always sets Content-Range when a byte-range is requested.
+  # Strategy: request byte 0-0 → parse "Content-Range: bytes 0-0/<total>" field.
+  local total_size=0
+  local range_header
+  range_header=$(curl -sI -L --max-redirs 10 -H "Range: bytes=0-0" "$url" 2>/dev/null | tr -d '\r')
+  total_size=$(echo "$range_header" \
+    | awk 'tolower($1) == "content-range:" { split($2, a, "/"); print a[2]+0 }')
+  # Fallback: Content-Length (works when no redirect strips it)
+  if [[ -z "$total_size" ]] || [[ "$total_size" -eq 0 ]]; then
+    total_size=$(echo "$range_header" \
+      | awk 'tolower($1) == "content-length:" { last = $2+0 } END { print (last ? last : 0) }')
+  fi
+  : "${total_size:=0}"
+
   # Download with aria2c (quiet output; custom progress bar below)
   # Options:
   #   -x16: Use 16 connections per server
@@ -708,13 +733,6 @@ download_aria2c_file() {
     -o "$filename" \
     "$url" &
   local aria_pid=$!
-
-  # Fetch Content-Length before kicking off aria2c (follow redirects, strip \r)
-  local total_size=0
-  total_size=$(curl -sI -L --max-redirs 10 "$url" 2>/dev/null \
-    | tr -d '\r' \
-    | awk 'tolower($1) == "content-length:" { last = $2+0 } END { print (last ? last : 0) }')
-  : "${total_size:=0}"
 
   show_download_progress "$aria_pid" "$dest_path" "$total_size"
 
