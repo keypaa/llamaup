@@ -279,8 +279,10 @@ search_models() {
   local api_url="${HF_API_URL}"
   
   # Build query parameters
-  # CRITICAL: full=true returns siblings array with file metadata
-  local params="limit=${limit}&sort=downloads&direction=-1&full=true"
+  # NOTE: full=true returns siblings with file sizes but makes responses 10-50x larger,
+  # which can cause issues on Windows (shell variable overflow) and slow downloads.
+  # We omit full=true for search and lazily fetch full details per-model when needed.
+  local params="limit=${limit}&sort=downloads&direction=-1&filter=gguf"
   
   # Add skip/offset for pagination
   if [[ "$skip" -gt 0 ]]; then
@@ -295,21 +297,25 @@ search_models() {
     params="${params}&search=${encoded_query}"
   fi
   
-  # Filter by gguf tag
-  params="${params}&filter=gguf"
-  
   info "Searching HuggingFace for GGUF models..."
   [[ -n "$query" ]] && info "Query: ${BOLD}${query}${RESET}"
   
-  # Make API request with timeout
+  # Make API request with timeout and compression
+  # --compressed: handle gzipped CDN responses (common with HuggingFace/Cloudflare)
+  # -H "Accept: application/json": ensure JSON even if API defaults change
   local response
-  if ! response=$(curl -fsSL --max-time 30 "${api_url}?${params}"); then
+  if ! response=$(curl -fsSL --compressed --max-time 60 \
+    -H "Accept: application/json" \
+    "${api_url}?${params}"); then
     error "Failed to query HuggingFace API"
   fi
   
   # Validate JSON response
   if ! echo "$response" | jq empty 2>/dev/null; then
-    error "Invalid JSON response from HuggingFace API"
+    # Print diagnostic info (first 500 chars) to help debug
+    local preview
+    preview=$(echo "$response" | head -c 500 2>/dev/null || echo "(unable to capture)")
+    error "Invalid JSON response from HuggingFace API. Response preview: ${preview}"
   fi
   
   echo "$response"
@@ -324,15 +330,20 @@ fetch_model_details() {
   local model_id="$1"
   local api_url="https://huggingface.co/api/models/${model_id}?full=true"
 
+  # Use --compressed for CDN gzip handling and Accept header for reliable JSON
   local response
-  if ! response=$(curl -fsSL --max-time 30 "$api_url" 2>/dev/null); then
+  if ! response=$(curl -fsSL --compressed --max-time 60 \
+    -H "Accept: application/json" \
+    "$api_url" 2>/dev/null); then
     warn "Failed to fetch model details for size metadata: ${model_id}"
     echo ""
     return 1
   fi
 
   if ! echo "$response" | jq empty 2>/dev/null; then
-    warn "Invalid model detail JSON for: ${model_id}"
+    local preview
+    preview=$(echo "$response" | head -c 500 2>/dev/null || echo "(unable to capture)")
+    warn "Invalid model detail JSON for: ${model_id}. Preview: ${preview}"
     echo ""
     return 1
   fi
@@ -381,6 +392,7 @@ parse_model_metadata() {
     [.siblings // [] | .[] | select(.rfilename | endswith(".gguf"))] | length
   ')
   
+  # Try to get sizes if available (full=true), fall back to 0 if not
   total_size=$(echo "$model_json" | jq -r '
     [.siblings // [] | .[] | select(.rfilename | endswith(".gguf")) | .size // 0] | add // 0
   ')
@@ -1156,7 +1168,9 @@ run_premium_search() {
       need_fetch=false
 
       # Build the HuggingFace API URL
-      local params="limit=${limit}&sort=downloads&direction=-1&full=true&filter=gguf"
+      # NOTE: Omit full=true for search to keep responses small and fast.
+      # Full details (with file sizes) are fetched on-demand per model.
+      local params="limit=${limit}&sort=downloads&direction=-1&filter=gguf"
       if [[ -n "$query" ]]; then
         local encoded_query
         encoded_query=$(printf '%s' "$query" | sed 's/ /%20/g')
@@ -1168,18 +1182,23 @@ run_premium_search() {
       local full_url="${HF_API_URL}?${params}"
 
       # Fetch with a gum spinner so the user sees progress
+      # --compressed handles gzipped CDN responses from HuggingFace/Cloudflare
       local page_results=""
       if ! page_results=$(gum spin \
           --spinner dot \
           --title "Fetching GGUF models from HuggingFace..." \
           --show-output \
-          -- curl -fsSL --max-time 30 "$full_url" 2>/dev/null); then
+          -- curl -fsSL --compressed --max-time 60 \
+            -H "Accept: application/json" \
+            "$full_url" 2>/dev/null); then
         gum style --foreground 196 "?-- Failed to query HuggingFace API. Check your connection."
         return 1
       fi
 
       if ! echo "$page_results" | jq empty 2>/dev/null; then
-        gum style --foreground 196 "?-- Invalid API response from HuggingFace."
+        local preview
+        preview=$(echo "$page_results" | head -c 500 2>/dev/null || echo "(unable to capture)")
+        gum style --foreground 196 "?-- Invalid API response from HuggingFace. Preview: ${preview}"
         return 1
       fi
 
@@ -1310,7 +1329,8 @@ show_premium_model_quantizations() {
         --spinner dot \
         --title "Fetching file metadata..." \
         --show-output \
-        -- curl -fsSL --max-time 30 \
+        -- curl -fsSL --compressed --max-time 60 \
+          -H "Accept: application/json" \
           "https://huggingface.co/api/models/${model_id}?full=true" 2>/dev/null); then
       if echo "$refreshed_json" | jq empty 2>/dev/null; then
         gguf_files=$(list_gguf_files "$refreshed_json")
@@ -1652,6 +1672,19 @@ show_model_quantizations() {
   # Get list of GGUF files
   local gguf_files
   gguf_files=$(list_gguf_files "$model_json")
+  
+  # If sizes are missing (search was done without full=true), fetch detailed metadata
+  if echo "$gguf_files" | jq -e 'any(.[]; .size == null or .size == 0)' >/dev/null 2>&1; then
+    info "Fetching file sizes from HuggingFace..."
+    local refreshed_json
+    if refreshed_json=$(curl -fsSL --compressed --max-time 60 \
+      -H "Accept: application/json" \
+      "https://huggingface.co/api/models/${model_id}?full=true" 2>/dev/null); then
+      if echo "$refreshed_json" | jq empty 2>/dev/null; then
+        gguf_files=$(list_gguf_files "$refreshed_json")
+      fi
+    fi
+  fi
   
   if [[ -z "$gguf_files" ]] || [[ "$gguf_files" == "[]" ]]; then
     warn "No GGUF files found in this model"
