@@ -303,20 +303,30 @@ search_models() {
   # Make API request with timeout and compression
   # --compressed: handle gzipped CDN responses (common with HuggingFace/Cloudflare)
   # -H "Accept: application/json": ensure JSON even if API defaults change
-  local response
-  if ! response=$(curl -fsSL --compressed --max-time 60 \
+  local tmp_file
+  tmp_file=$(mktemp -t llamaup.XXXXXX 2>/dev/null || echo "${TEMP:-/tmp}/llamaup.$$.json")
+  if ! curl -fsSL --compressed --max-time 60 \
     -H "Accept: application/json" \
-    "${api_url}?${params}"); then
+    -o "$tmp_file" \
+    "${api_url}?${params}"; then
+    rm -f "$tmp_file"
     error "Failed to query HuggingFace API"
   fi
   
-  # Validate JSON response
-  if ! echo "$response" | jq empty 2>/dev/null; then
-    # Print diagnostic info (first 500 chars) to help debug
-    local preview
-    preview=$(echo "$response" | head -c 500 2>/dev/null || echo "(unable to capture)")
-    error "Invalid JSON response from HuggingFace API. Response preview: ${preview}"
+  # Validate JSON response from file (avoids pipe/variable corruption on Windows)
+  if ! jq empty "$tmp_file" 2>/dev/null; then
+    local preview filesize jq_err
+    preview=$(head -c 500 "$tmp_file" 2>/dev/null || echo "(unable to capture)")
+    filesize=$(stat -c%s "$tmp_file" 2>/dev/null || wc -c < "$tmp_file" 2>/dev/null || echo "?")
+    jq_err=$(jq empty "$tmp_file" 2>&1 || true)
+    rm -f "$tmp_file"
+    error "Invalid JSON (${filesize} bytes). jq: ${jq_err} | preview: ${preview:0:300}"
   fi
+  
+  # Read response from file into variable
+  local response
+  response=$(cat "$tmp_file")
+  rm -f "$tmp_file"
   
   echo "$response"
 }
@@ -331,23 +341,31 @@ fetch_model_details() {
   local api_url="https://huggingface.co/api/models/${model_id}?full=true"
 
   # Use --compressed for CDN gzip handling and Accept header for reliable JSON
-  local response
-  if ! response=$(curl -fsSL --compressed --max-time 60 \
+  # Use temp file to avoid pipe/variable corruption
+  local tmp_file
+  tmp_file=$(mktemp -t llamaup.XXXXXX 2>/dev/null || echo "${TEMP:-/tmp}/llamaup.$$.json")
+  if ! curl -fsSL --compressed --max-time 60 \
     -H "Accept: application/json" \
-    "$api_url" 2>/dev/null); then
+    -o "$tmp_file" \
+    "$api_url" 2>/dev/null; then
+    rm -f "$tmp_file"
     warn "Failed to fetch model details for size metadata: ${model_id}"
     echo ""
     return 1
   fi
 
-  if ! echo "$response" | jq empty 2>/dev/null; then
+  if ! jq empty "$tmp_file" 2>/dev/null; then
     local preview
-    preview=$(echo "$response" | head -c 500 2>/dev/null || echo "(unable to capture)")
+    preview=$(head -c 500 "$tmp_file" 2>/dev/null || echo "(unable to capture)")
+    rm -f "$tmp_file"
     warn "Invalid model detail JSON for: ${model_id}. Preview: ${preview}"
     echo ""
     return 1
   fi
 
+  local response
+  response=$(cat "$tmp_file")
+  rm -f "$tmp_file"
   echo "$response"
   return 0
 }
@@ -1051,6 +1069,11 @@ main() {
     esac
   done
   
+  # Check mandatory dependency: jq (required by both premium and minimal modes)
+  if ! check_dependency jq; then
+    error "jq is required but not found. Install it and try again."
+  fi
+  
   # Detect mode if not forced
   if [[ -z "$MODE" ]]; then
     detect_mode "$action"
@@ -1181,26 +1204,35 @@ run_premium_search() {
       fi
       local full_url="${HF_API_URL}?${params}"
 
-      # Fetch with a gum spinner so the user sees progress
-      # --compressed handles gzipped CDN responses from HuggingFace/Cloudflare
-      local page_results=""
-      if ! page_results=$(gum spin \
-          --spinner dot \
-          --title "Fetching GGUF models from HuggingFace..." \
-          --show-output \
-          -- curl -fsSL --compressed --max-time 60 \
-            -H "Accept: application/json" \
-            "$full_url" 2>/dev/null); then
+      # Fetch models directly to temp file (avoids gum spin output capture issues)
+      gum style --foreground 245 "Fetching GGUF models from HuggingFace..."
+      local tmp_file
+      tmp_file=$(mktemp -t llamaup.XXXXXX 2>/dev/null || echo "${TEMP:-/tmp}/llamaup.$$.json")
+      if ! curl -fsSL --compressed --max-time 60 \
+        -H "Accept: application/json" \
+        -o "$tmp_file" \
+        "$full_url" 2>/dev/null; then
+        rm -f "$tmp_file"
         gum style --foreground 196 "?-- Failed to query HuggingFace API. Check your connection."
         return 1
       fi
 
-      if ! echo "$page_results" | jq empty 2>/dev/null; then
-        local preview
-        preview=$(echo "$page_results" | head -c 500 2>/dev/null || echo "(unable to capture)")
-        gum style --foreground 196 "?-- Invalid API response from HuggingFace. Preview: ${preview}"
+      if ! jq empty "$tmp_file" 2>/dev/null; then
+        local preview filesize jq_err
+        preview=$(head -c 500 "$tmp_file" 2>/dev/null || echo "(unable to capture)")
+        filesize=$(stat -c%s "$tmp_file" 2>/dev/null || wc -c < "$tmp_file" 2>/dev/null || echo "?")
+        jq_err=$(jq empty "$tmp_file" 2>&1 || true)
+        rm -f "$tmp_file"
+        gum style --foreground 196 "?-- Invalid API response (${filesize} bytes)."
+        gum style --foreground 196 "   jq: ${jq_err}"
+        gum style --foreground 196 "   Preview: ${preview:0:300}"
         return 1
       fi
+
+      # Read validated JSON into variable
+      local page_results
+      page_results=$(cat "$tmp_file")
+      rm -f "$tmp_file"
 
       local page_count
       page_count=$(echo "$page_results" | jq 'length')
@@ -1677,12 +1709,9 @@ show_model_quantizations() {
   if echo "$gguf_files" | jq -e 'any(.[]; .size == null or .size == 0)' >/dev/null 2>&1; then
     info "Fetching file sizes from HuggingFace..."
     local refreshed_json
-    if refreshed_json=$(curl -fsSL --compressed --max-time 60 \
-      -H "Accept: application/json" \
-      "https://huggingface.co/api/models/${model_id}?full=true" 2>/dev/null); then
-      if echo "$refreshed_json" | jq empty 2>/dev/null; then
-        gguf_files=$(list_gguf_files "$refreshed_json")
-      fi
+    refreshed_json=$(fetch_model_details "$model_id")
+    if [[ -n "$refreshed_json" ]]; then
+      gguf_files=$(list_gguf_files "$refreshed_json")
     fi
   fi
   
