@@ -9,6 +9,10 @@ on:
 
   workflow_dispatch:
     inputs:
+      ref:
+        description: 'Branch or ref to build from (defaults to the workflow ref)'
+        required: false
+        default: ''
       llama_version:
         description: 'llama.cpp release tag (e.g. b4200) or "latest"'
         required: false
@@ -40,7 +44,7 @@ permissions:
 # One run per llama.cpp version; duplicate triggers for the same tag are
 # cancelled so backfill dispatches never produce duplicate releases.
 concurrency:
-  group: build-${{ github.event.inputs.llama_version || github.event.client_payload.version || 'latest' }}
+  group: build-${{ github.event.inputs.ref || github.event.client_payload.ref || github.ref_name || 'main' }}-${{ github.event.inputs.llama_version || github.event.client_payload.version || 'latest' }}
   cancel-in-progress: false   # queue, don't cancel — let each version finish
 
 # ---------------------------------------------------------------------------
@@ -57,6 +61,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
 
       - name: Run shellcheck
         run: shellcheck -S warning scripts/*.sh
@@ -165,6 +171,8 @@ jobs:
     steps:
       - name: Checkout llamaup
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
 
       - name: Install build dependencies
         env:
@@ -235,6 +243,72 @@ jobs:
 
       - name: cmake install
         run: cmake --install /tmp/llamaup-build
+
+      - name: Bundle CUDA runtime libraries
+        run: |
+          set -euo pipefail
+
+          INSTALL_DIR=/tmp/llamaup-install
+          LIB_DIR="$INSTALL_DIR/lib"
+          mkdir -p "$LIB_DIR"
+
+          CUDA_ROOT="$(cd "$(dirname "$(command -v nvcc)")/.." && pwd)"
+          declare -a SEARCH_DIRS=(
+            "${CUDA_ROOT}/targets/x86_64-linux/lib"
+            "${CUDA_ROOT}/lib64"
+            "${CUDA_ROOT}/lib"
+            "/usr/local/cuda/targets/x86_64-linux/lib"
+            "/usr/local/cuda/lib64"
+          )
+          declare -a RUNTIME_LIBS=(
+            "libcudart.so"
+            "libcudart.so.12"
+            "libcublas.so"
+            "libcublasLt.so"
+            "libcufft.so"
+            "libcurand.so"
+            "libcusparse.so"
+            "libnvrtc.so"
+            "libnvJitLink.so"
+            "libnvfatbin.so"
+          )
+
+          copied=0
+          missing=()
+
+          for lib_name in "${RUNTIME_LIBS[@]}"; do
+            [[ -e "${LIB_DIR}/${lib_name}" ]] && continue
+
+            source_lib=""
+            for search_dir in "${SEARCH_DIRS[@]}"; do
+              [[ -d "$search_dir" ]] || continue
+              if [[ -e "${search_dir}/${lib_name}" ]]; then
+                source_lib="${search_dir}/${lib_name}"
+                break
+              fi
+            done
+
+            if [[ -n "$source_lib" ]]; then
+              cp -L "$source_lib" "$LIB_DIR/"
+              copied=$((copied + 1))
+            else
+              missing+=("$lib_name")
+            fi
+          done
+
+          if (( copied > 0 )); then
+            echo "Bundled ${copied} CUDA runtime libraries into ${LIB_DIR}"
+          fi
+
+          if (( ${#missing[@]} > 0 )); then
+            echo "Warning: some CUDA runtime libraries were not found: ${missing[*]}"
+          fi
+
+          if [[ ! -e "${LIB_DIR}/libcudart.so" && ! -e "${LIB_DIR}/libcudart.so.12" ]]; then
+            echo "Error: required CUDA runtime library libcudart was not bundled." >&2
+            echo "Check that the CUDA runtime libraries are present in the build container." >&2
+            exit 1
+          fi
 
       - name: Detect CUDA toolkit version
         id: cuda-ver
@@ -370,6 +444,8 @@ jobs:
     steps:
       - name: Checkout llamaup
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4

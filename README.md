@@ -55,6 +55,8 @@ export LLAMA_DEPLOY_REPO=keypaa/llamaup
 
 That's it. The script detects your GPU, finds the matching binary, verifies the checksum, and installs it to `~/.local/bin/llama`.
 
+The shipped archive bundles the CUDA runtime libraries used by llama.cpp, so the target machine only needs a compatible NVIDIA driver. It does not need to match the exact CUDA toolkit version used during the build.
+
 **Add to your PATH:**
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
