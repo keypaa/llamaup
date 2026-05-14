@@ -1265,9 +1265,20 @@ run_premium_search() {
           all_model_ids+=("$model_id")
           all_model_jsons+=("$json")
 
+          # Calculate available width for model name based on terminal size.
+          # Fixed right-side overhead: 2 (padding) + 12 (downloads) + 5 (" dl  ") +
+          # 3 (variants) + 9 (" variants") = 31 chars.
+          local term_cols model_width display_id
+          term_cols=$(tput cols 2>/dev/null || echo 80)
+          model_width=$((term_cols - 31))
+          [[ $model_width -lt 20 ]] && model_width=20
+          display_id="$model_id"
+          if [[ ${#model_id} -gt $model_width ]]; then
+            display_id="${model_id:0:$((model_width - 3))}..."
+          fi
           local display_line
-          printf -v display_line "%-52s  %12s dl  %3s variants" \
-            "$model_id" "$downloads" "$quant_count"
+          printf -v display_line "%-*s  %12s dl  %3s variants" \
+            "$model_width" "$display_id" "$downloads" "$quant_count"
           all_display_lines+=("$display_line")
         done
       fi
@@ -1310,12 +1321,11 @@ run_premium_search() {
         ;;
     esac
 
-    # The first whitespace-delimited token of each display line is the model_id
-    local selected_model_id
-    selected_model_id=$(printf '%s' "$selected" | awk '{print $1}')
+    # Match the selected display line back to its index in all_display_lines[].
+    # This is robust against truncation because we compare the full formatted line.
     local selected_index=-1
-    for i in "${!all_model_ids[@]}"; do
-      if [[ "${all_model_ids[i]}" == "$selected_model_id" ]]; then
+    for i in "${!all_display_lines[@]}"; do
+      if [[ "${all_display_lines[i]}" == "$selected" ]]; then
         selected_index=$i
         break
       fi
