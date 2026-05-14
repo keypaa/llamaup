@@ -107,7 +107,13 @@ verify_archive() {
     return 1
   fi
 
-  # Check 3: Verify SHA256 if .sha256 file exists
+  # Check 3: CUDA runtime libraries should be bundled inside the archive
+  if ! tar -tzf "$archive_path" | grep -Eq '(^|/)libcudart\.so(\.[0-9]+)?$'; then
+    warn "Archive does not include bundled CUDA runtime libraries: ${archive_path}"
+    return 1
+  fi
+
+  # Check 4: Verify SHA256 if .sha256 file exists
   if [[ -f "$sha256_path" ]]; then
     local expected_hash actual_hash
     expected_hash=$(awk '{print $1}' "$sha256_path")
@@ -289,6 +295,8 @@ build() {
 
   mkdir -p "$build_dir" "$install_dir"
 
+  ensure_cuda_stub_symlink
+
   info "Configuring (SM ${sm_version})..."
   # LLAMA_BUILD_BORINGSSL=ON builds BoringSSL from source and bundles Mozilla's CA store
   # into the binary, so HTTPS (-hf flag) works on any Linux without system SSL dependencies.
@@ -309,7 +317,127 @@ build() {
   cmake --install "$build_dir" \
     2>&1 || error "cmake install failed."
 
+  info "Bundling CUDA runtime libraries..."
+  bundle_cuda_runtime_libs "$install_dir"
+
   success "Build complete → ${install_dir}"
+}
+
+# ---------------------------------------------------------------------------
+# ensure_cuda_stub_symlink — make sure libcuda.so.1 exists in the CUDA stub
+# directory so CUDA-linked targets can resolve the driver stub during linking.
+# Exits 1 if the stub directory is missing or cannot be updated.
+# ---------------------------------------------------------------------------
+ensure_cuda_stub_symlink() {
+  local cuda_root
+  local stub_dir
+
+  if command -v nvcc >/dev/null 2>&1; then
+    cuda_root="$(cd "$(dirname "$(command -v nvcc)")/.." && pwd)"
+  else
+    cuda_root="/usr/local/cuda"
+  fi
+
+  for stub_dir in \
+    "${cuda_root}/lib64/stubs" \
+    "/usr/local/cuda/lib64/stubs"; do
+    if [[ -d "$stub_dir" ]]; then
+      if [[ -f "${stub_dir}/libcuda.so" && ! -e "${stub_dir}/libcuda.so.1" ]]; then
+        ln -s "${stub_dir}/libcuda.so" "${stub_dir}/libcuda.so.1" \
+          || error "Failed to create libcuda.so.1 stub symlink in ${stub_dir}."
+      fi
+
+      if [[ -w /etc/ld.so.conf.d ]]; then
+        echo "$stub_dir" > /etc/ld.so.conf.d/cuda-stubs.conf
+        ldconfig >/dev/null 2>&1 || warn "ldconfig could not refresh the linker cache."
+      fi
+
+      return 0
+    fi
+  done
+
+  error "CUDA stub directory not found.\n  → Check that the CUDA toolkit is installed in the build environment."
+}
+
+# ---------------------------------------------------------------------------
+# bundle_cuda_runtime_libs — copy the CUDA runtime libraries into install/lib
+# so packaged binaries do not depend on the host CUDA toolkit layout.
+# Args: $1 = install_dir
+# Exits 1 if required CUDA runtime libraries cannot be found.
+# ---------------------------------------------------------------------------
+bundle_cuda_runtime_libs() {
+  local install_dir="$1"
+  local lib_dir="${install_dir}/lib"
+  local cuda_root
+
+  mkdir -p "$lib_dir"
+
+  if command -v nvcc >/dev/null 2>&1; then
+    cuda_root="$(cd "$(dirname "$(command -v nvcc)")/.." && pwd)"
+  else
+    cuda_root="/usr/local/cuda"
+  fi
+
+  local -a search_dirs=(
+    "${cuda_root}/targets/x86_64-linux/lib"
+    "${cuda_root}/lib64"
+    "${cuda_root}/lib"
+    "/usr/local/cuda/targets/x86_64-linux/lib"
+    "/usr/local/cuda/lib64"
+  )
+
+  local -a runtime_libs=(
+    "libcudart.so"
+    "libcudart.so.12"
+    "libcublas.so"
+    "libcublasLt.so"
+    "libcufft.so"
+    "libcurand.so"
+    "libcusparse.so"
+    "libnvrtc.so"
+    "libnvJitLink.so"
+    "libnvfatbin.so"
+  )
+
+  local copied=0
+  local -a missing=()
+
+  for lib_name in "${runtime_libs[@]}"; do
+    if [[ -e "${lib_dir}/${lib_name}" ]]; then
+      continue
+    fi
+
+    local source_lib=""
+    local search_dir
+    for search_dir in "${search_dirs[@]}"; do
+      [[ -d "$search_dir" ]] || continue
+      if [[ -e "${search_dir}/${lib_name}" ]]; then
+        source_lib="${search_dir}/${lib_name}"
+        break
+      fi
+    done
+
+    if [[ -n "$source_lib" ]]; then
+      cp -a "$source_lib" "$lib_dir/" \
+        || error "Failed to bundle CUDA runtime library: ${lib_name}."
+      ((copied++)) || true
+    else
+      missing+=("$lib_name")
+    fi
+  done
+
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    warn "Some CUDA runtime libraries were not found in the build environment: ${missing[*]}"
+    warn "The binary may still rely on host CUDA libraries."
+  fi
+
+  if [[ ! -e "${lib_dir}/libcudart.so" && ! -e "${lib_dir}/libcudart.so.12" ]]; then
+    error "Required CUDA runtime library libcudart was not bundled.\n  → Check that the CUDA toolkit runtime libraries are installed in the build environment."
+  fi
+
+  if [[ "$copied" -gt 0 ]]; then
+    success "Bundled ${copied} CUDA runtime libraries into ${lib_dir}"
+  fi
 }
 
 # ---------------------------------------------------------------------------

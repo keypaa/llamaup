@@ -357,6 +357,7 @@ install_binary() {
   # Build LD_LIBRARY_PATH string once (same for every wrapper)
   local ld_path_parts=()
   [[ -d "${install_dir}/lib" ]] && ld_path_parts+=("\$INSTALL_DIR/lib")
+  [[ -d "${install_dir}/lib64" ]] && ld_path_parts+=("\$INSTALL_DIR/lib64")
   [[ -d "${install_dir}/bin" ]] && ld_path_parts+=("\$INSTALL_DIR/bin")
   local ld_path_str
   ld_path_str=$(IFS=:; echo "${ld_path_parts[*]}")
