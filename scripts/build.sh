@@ -418,7 +418,7 @@ bundle_cuda_runtime_libs() {
     done
 
     if [[ -n "$source_lib" ]]; then
-      cp -a "$source_lib" "$lib_dir/" \
+      cp -L "$source_lib" "$lib_dir/" \
         || error "Failed to bundle CUDA runtime library: ${lib_name}."
       ((copied++)) || true
     else

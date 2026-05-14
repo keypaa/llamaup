@@ -289,7 +289,7 @@ jobs:
             done
 
             if [[ -n "$source_lib" ]]; then
-              cp -a "$source_lib" "$LIB_DIR/"
+              cp -L "$source_lib" "$LIB_DIR/"
               copied=$((copied + 1))
             else
               missing+=("$lib_name")
