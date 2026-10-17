@@ -277,10 +277,10 @@ jobs:
             "${CUDA_ROOT}/lib"
             "/usr/local/cuda/targets/x86_64-linux/lib"
             "/usr/local/cuda/lib64"
+            "/usr/lib/x86_64-linux-gnu"
           )
           declare -a RUNTIME_LIBS=(
             "libcudart.so"
-            "libcudart.so.12"
             "libcublas.so"
             "libcublasLt.so"
             "libcufft.so"
@@ -289,28 +289,55 @@ jobs:
             "libnvrtc.so"
             "libnvJitLink.so"
             "libnvfatbin.so"
+            "libnccl.so"
           )
+
+          soname_of() {
+            local f="$1"
+            readelf -d "$f" 2>/dev/null | sed -n 's/.*SONAME[^]]*\[[^]]*\].*\[\([^]]*\)\].*/\1/p' | head -n1
+            # fallback: objdump
+            if [[ -z "$(readelf -d "$f" 2>/dev/null | grep SONAME)" ]]; then
+              objdump -p "$f" 2>/dev/null | sed -n 's/.*SONAME *//p' | head -n1
+            fi
+          }
 
           copied=0
           missing=()
 
           for lib_name in "${RUNTIME_LIBS[@]}"; do
-            [[ -e "${LIB_DIR}/${lib_name}" ]] && continue
-
+            # Find a source file (prefer versioned SONAME files)
             source_lib=""
             for search_dir in "${SEARCH_DIRS[@]}"; do
               [[ -d "$search_dir" ]] || continue
+              # exact match first
               if [[ -e "${search_dir}/${lib_name}" ]]; then
                 source_lib="${search_dir}/${lib_name}"
                 break
               fi
+              # then any versioned variant
+              cand=$(ls "${search_dir}/${lib_name}"* 2>/dev/null | head -n1 || true)
+              if [[ -n "$cand" && -e "$cand" ]]; then
+                source_lib="$cand"
+                break
+              fi
             done
 
-            if [[ -n "$source_lib" ]]; then
-              cp -L "$source_lib" "$LIB_DIR/"
-              copied=$((copied + 1))
-            else
+            if [[ -z "$source_lib" ]]; then
               missing+=("$lib_name")
+              continue
+            fi
+
+            soname="$(soname_of "$source_lib")"
+            [[ -z "$soname" ]] && soname="$lib_name"
+
+            # Copy under SONAME if not present
+            if [[ ! -e "${LIB_DIR}/${soname}" ]]; then
+              cp -L "$source_lib" "${LIB_DIR}/${soname}"
+              copied=$((copied + 1))
+            fi
+            # Ensure unversioned name points at SONAME
+            if [[ "$lib_name" != "$soname" && ! -e "${LIB_DIR}/${lib_name}" ]]; then
+              ln -s "$soname" "${LIB_DIR}/${lib_name}"
             fi
           done
 
@@ -322,9 +349,13 @@ jobs:
             echo "Warning: some CUDA runtime libraries were not found: ${missing[*]}"
           fi
 
-          if [[ ! -e "${LIB_DIR}/libcudart.so" && ! -e "${LIB_DIR}/libcudart.so.12" ]]; then
+          # Required: cudart and cublas
+          if [[ ! -e "${LIB_DIR}/libcudart.so.12" && ! -e "${LIB_DIR}/libcudart.so" ]]; then
             echo "Error: required CUDA runtime library libcudart was not bundled." >&2
-            echo "Check that the CUDA runtime libraries are present in the build container." >&2
+            exit 1
+          fi
+          if [[ ! -e "${LIB_DIR}/libcublas.so.12" && ! -e "${LIB_DIR}/libcublas.so" ]]; then
+            echo "Error: required CUDA runtime library libcublas was not bundled." >&2
             exit 1
           fi
 
@@ -407,7 +438,9 @@ jobs:
           fi
 
           # Include packaged libs and CUDA libs in the dynamic loader path.
-          export LD_LIBRARY_PATH="/tmp/smoke/lib:/tmp/smoke/lib64:/usr/local/cuda/lib64:/usr/local/cuda/targets/x86_64-linux/lib:${STUB_DIR}:${LD_LIBRARY_PATH:-}"
+          # Only the bundled libs (plus the libcuda stub) should be needed on a target
+          # machine; deliberately exclude /usr/local/cuda so a missing bundled lib fails here.
+          export LD_LIBRARY_PATH="/tmp/smoke/lib:/tmp/smoke/lib64:${STUB_DIR}:${LD_LIBRARY_PATH:-}"
 
           # Fail fast with a clear dependency report if runtime libs are missing.
           if ldd "$BINARY" | grep -q "not found"; then

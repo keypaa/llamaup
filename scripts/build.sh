@@ -387,11 +387,11 @@ bundle_cuda_runtime_libs() {
     "${cuda_root}/lib"
     "/usr/local/cuda/targets/x86_64-linux/lib"
     "/usr/local/cuda/lib64"
+    "/usr/lib/x86_64-linux-gnu"
   )
 
   local -a runtime_libs=(
     "libcudart.so"
-    "libcudart.so.12"
     "libcublas.so"
     "libcublasLt.so"
     "libcufft.so"
@@ -400,16 +400,18 @@ bundle_cuda_runtime_libs() {
     "libnvrtc.so"
     "libnvJitLink.so"
     "libnvfatbin.so"
+    "libnccl.so"
   )
+
+  soname_of() {
+    local f="$1"
+    readelf -d "$f" 2>/dev/null | sed -n 's/.*SONAME[^]]*\[[^]]*\].*\[\([^]]*\)\].*/\1/p' | head -n1
+  }
 
   local copied=0
   local -a missing=()
 
   for lib_name in "${runtime_libs[@]}"; do
-    if [[ -e "${lib_dir}/${lib_name}" ]]; then
-      continue
-    fi
-
     local source_lib=""
     local search_dir
     for search_dir in "${search_dirs[@]}"; do
@@ -418,14 +420,30 @@ bundle_cuda_runtime_libs() {
         source_lib="${search_dir}/${lib_name}"
         break
       fi
+      local cand
+      cand="$(ls "${search_dir}/${lib_name}"* 2>/dev/null | head -n1 || true)"
+      if [[ -n "$cand" && -e "$cand" ]]; then
+        source_lib="$cand"
+        break
+      fi
     done
 
-    if [[ -n "$source_lib" ]]; then
-      cp -L "$source_lib" "$lib_dir/" \
+    if [[ -z "$source_lib" ]]; then
+      missing+=("$lib_name")
+      continue
+    fi
+
+    local soname
+    soname="$(soname_of "$source_lib")"
+    [[ -z "$soname" ]] && soname="$lib_name"
+
+    if [[ ! -e "${lib_dir}/${soname}" ]]; then
+      cp -L "$source_lib" "${lib_dir}/${soname}" \
         || error "Failed to bundle CUDA runtime library: ${lib_name}."
       ((copied++)) || true
-    else
-      missing+=("$lib_name")
+    fi
+    if [[ "$lib_name" != "$soname" && ! -e "${lib_dir}/${lib_name}" ]]; then
+      ln -s "$soname" "${lib_dir}/${lib_name}"
     fi
   done
 
@@ -434,14 +452,18 @@ bundle_cuda_runtime_libs() {
     warn "The binary may still rely on host CUDA libraries."
   fi
 
-  if [[ ! -e "${lib_dir}/libcudart.so" && ! -e "${lib_dir}/libcudart.so.12" ]]; then
+  if [[ ! -e "${lib_dir}/libcudart.so.12" && ! -e "${lib_dir}/libcudart.so" ]]; then
     error "Required CUDA runtime library libcudart was not bundled.\n  → Check that the CUDA toolkit runtime libraries are installed in the build environment."
+  fi
+  if [[ ! -e "${lib_dir}/libcublas.so.12" && ! -e "${lib_dir}/libcublas.so" ]]; then
+    error "Required CUDA runtime library libcublas was not bundled.\n  → Check that the CUDA toolkit runtime libraries are installed in the build environment."
   fi
 
   if [[ "$copied" -gt 0 ]]; then
     success "Bundled ${copied} CUDA runtime libraries into ${lib_dir}"
   fi
 }
+
 
 # ---------------------------------------------------------------------------
 # package — create a named tarball and generate a paired SHA256 file
