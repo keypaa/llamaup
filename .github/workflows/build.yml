@@ -294,7 +294,7 @@ jobs:
 
           soname_of() {
             local f="$1"
-            readelf -d "$f" 2>/dev/null | sed -n 's/.*SONAME[^]]*\[[^]]*\].*\[\([^]]*\)\].*/\1/p' | head -n1
+            readelf -d "$f" 2>/dev/null | grep SONAME | sed 's/.*\[\(.*\)\].*/\1/' | head -n1
             # fallback: objdump
             if [[ -z "$(readelf -d "$f" 2>/dev/null | grep SONAME)" ]]; then
               objdump -p "$f" 2>/dev/null | sed -n 's/.*SONAME *//p' | head -n1

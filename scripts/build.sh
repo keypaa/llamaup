@@ -405,7 +405,7 @@ bundle_cuda_runtime_libs() {
 
   soname_of() {
     local f="$1"
-    readelf -d "$f" 2>/dev/null | sed -n 's/.*SONAME[^]]*\[[^]]*\].*\[\([^]]*\)\].*/\1/p' | head -n1
+    readelf -d "$f" 2>/dev/null | grep SONAME | sed 's/.*\[\(.*\)\].*/\1/' | head -n1
   }
 
   local copied=0
