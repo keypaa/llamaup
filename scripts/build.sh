@@ -544,7 +544,7 @@ main() {
   local cuda_version=""
   local output_dir="./dist"
   local do_upload=false
-  local github_repo="${LLAMA_DEPLOY_REPO:-}"
+  local github_repo="${LLAMA_DEPLOY_REPO:-keypaa/llamaup}"
   local build_jobs
   build_jobs=$(nproc 2>/dev/null || echo "4")
   local src_dir="/tmp/llamaup-src"

@@ -248,7 +248,7 @@ print_json() {
 # main
 # ---------------------------------------------------------------------------
 main() {
-  local github_repo="${LLAMA_DEPLOY_REPO:-}"
+  local github_repo="${LLAMA_DEPLOY_REPO:-keypaa/llamaup}"
   local version="latest"
   local sm_filter=""
   local output_json=false

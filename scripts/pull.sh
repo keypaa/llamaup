@@ -409,7 +409,7 @@ list_available() {
 # ---------------------------------------------------------------------------
 main() {
   local llama_version="latest"
-  local github_repo="${LLAMA_DEPLOY_REPO:-}"
+  local github_repo="${LLAMA_DEPLOY_REPO:-keypaa/llamaup}"
   local sm_version=""
   local install_dir="${HOME}/.local/bin/llama"
   local do_verify=true
