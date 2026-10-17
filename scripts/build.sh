@@ -306,6 +306,9 @@ build() {
     -DCMAKE_CUDA_ARCHITECTURES="${sm_version}" \
     -DCMAKE_INSTALL_PREFIX="$install_dir" \
     -DLLAMA_BUILD_BORINGSSL=ON \
+    -DLLAMA_BUILD_TESTS=OFF \
+    -DCMAKE_EXE_LINKER_FLAGS="-lpthread" \
+    -DCMAKE_SHARED_LINKER_FLAGS="-lpthread" \
     -G Ninja \
     2>&1 || error "cmake configure failed.\n  → Check that CUDA toolkit is installed and nvcc is in PATH.\n  → Try: nvcc --version"
 
