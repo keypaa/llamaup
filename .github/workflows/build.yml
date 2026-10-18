@@ -548,6 +548,11 @@ jobs:
             LATEST_FLAG="--latest=false"
           fi
 
+          # If a (possibly partial/broken) release exists for this tag, remove it first
+          # so re-runs can publish cleanly.
+          gh release delete "$VERSION" --repo "${{ github.repository }}" --yes 2>/dev/null || true
+          git push origin ":refs/tags/${VERSION}" 2>/dev/null || true
+
           gh release create "$VERSION" \
             --repo "${{ github.repository }}" \
             --title "llama.cpp ${VERSION}" \
