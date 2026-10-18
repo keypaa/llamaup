@@ -15,12 +15,17 @@ RAW="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
 if [[ -f "./scripts/pull.sh" ]]; then
   SCRIPTS_DIR="./scripts"
 else
-  SCRIPTS_DIR="$(mktemp -d)"
-  trap 'rm -rf "$SCRIPTS_DIR"' EXIT
-  mkdir -p "$SCRIPTS_DIR"
+  # Mirror the repo layout (root/scripts + root/configs) so the scripts can
+  # resolve ../configs/gpu_map.json relative to their own directory.
+  ROOT_DIR="$(mktemp -d)"
+  trap 'rm -rf "$ROOT_DIR"' EXIT
+  SCRIPTS_DIR="${ROOT_DIR}/scripts"
+  CONFIGS_DIR="${ROOT_DIR}/configs"
+  mkdir -p "$SCRIPTS_DIR" "$CONFIGS_DIR"
   for f in detect.sh pull.sh verify.sh list.sh; do
     curl -fsSL "${RAW}/scripts/${f}" -o "${SCRIPTS_DIR}/${f}"
   done
+  curl -fsSL "${RAW}/configs/gpu_map.json" -o "${CONFIGS_DIR}/gpu_map.json"
   chmod +x "${SCRIPTS_DIR}"/*.sh
 fi
 
