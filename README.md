@@ -32,6 +32,12 @@ This repo gives you:
 
 ### On a machine where you want to run llama.cpp
 
+**Option A — one-liner (no clone needed):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/keypaa/llamaup/main/install.sh | bash
+```
+
+**Option B — clone and run:**
 ```bash
 # Install required tools (if not already installed)
 # Ubuntu/Debian: sudo apt install -y curl jq tar
@@ -43,17 +49,14 @@ cd llamaup
 # If scripts aren't executable (e.g., downloaded as ZIP):
 chmod +x scripts/*.sh
 
-# Set the repo that hosts your pre-built binaries
-export LLAMA_DEPLOY_REPO=keypaa/llamaup
-
 # Pull the right binary for your GPU (auto-detected)
 ./scripts/pull.sh
 
 # Or pull a specific version
-./scripts/pull.sh --version b4102
+./scripts/pull.sh --version v0.7.0
 ```
 
-That's it. The script detects your GPU, finds the matching binary, verifies the checksum, and installs it to `~/.local/bin/llama`.
+That's it. The script detects your GPU, finds the matching binary, verifies the checksum, and installs it to `~/.local/bin/llama`. No `LLAMA_DEPLOY_REPO` needed — it defaults to `keypaa/llamaup`.
 
 The shipped archive bundles the CUDA runtime libraries used by llama.cpp, so the target machine only needs a compatible NVIDIA driver. It does not need to match the exact CUDA toolkit version used during the build.
 
@@ -472,10 +475,10 @@ The main install tool. Detects your GPU, downloads the matching binary, verifies
 ./scripts/pull.sh
 
 # List available binaries for a version
-./scripts/pull.sh --list --version b4102
+./scripts/pull.sh --list --version v0.7.0
 
 # Pull specific version and SM
-./scripts/pull.sh --version b4102 --sm 89
+./scripts/pull.sh --version v0.7.0 --sm 89
 
 # Custom install directory
 ./scripts/pull.sh --install-dir /opt/llama
@@ -503,7 +506,7 @@ Compile llama.cpp from source for a specific SM version and optionally upload to
 ./scripts/build.sh
 
 # Build for specific SM without uploading
-./scripts/build.sh --sm 89 --version b4102
+./scripts/build.sh --sm 89 --version v0.7.0
 
 # Build and upload to releases
 export GITHUB_TOKEN=your_token
@@ -559,7 +562,7 @@ Query GitHub Releases and display available pre-built binaries in a table format
 ./scripts/list.sh --repo keypaa/llamaup
 
 # List specific version
-./scripts/list.sh --version b4102
+./scripts/list.sh --version v0.7.0
 
 # Show all releases
 ./scripts/list.sh --all
@@ -650,7 +653,7 @@ Many GPUs share the same SM (Streaming Multiprocessor) architecture, so you don'
 ### Build for your current machine's GPU (and upload)
 
 ```bash
-export LLAMA_DEPLOY_REPO=keypaa/llamaup
+# Repo defaults to keypaa/llamaup (override with LLAMA_DEPLOY_REPO if forking)
 export GITHUB_TOKEN=your_token
 
 ./scripts/build.sh --upload
@@ -660,7 +663,7 @@ export GITHUB_TOKEN=your_token
 
 ```bash
 # Build for SM 89 (4090, L40S) without uploading
-./scripts/build.sh --sm 89 --version b4102 --output ./dist
+./scripts/build.sh --sm 89 --version v0.7.0 --output ./dist
 
 # Build for SM 80 (A100) and upload
 ./scripts/build.sh --sm 80 --upload
@@ -670,7 +673,7 @@ export GITHUB_TOKEN=your_token
 
 ```
 --sm <version>      SM architecture version (e.g. 89). Auto-detected if omitted.
---version <tag>     llama.cpp release tag (e.g. b4102). Default: latest.
+--version <tag>     llama.cpp release tag (e.g. v0.7.0). Default: latest.
 --cuda <version>    CUDA toolkit version. Default: auto-detected from nvcc.
 --output <dir>      Where to store the built binary. Default: ./dist
 --upload            Upload to GitHub Releases after building.
@@ -724,7 +727,7 @@ You can also trigger a build manually from the Actions tab with a specific versi
 ./scripts/pull.sh
 
 # Pull specific version, custom install dir
-./scripts/pull.sh --version b4102 --install-dir /opt/llama
+./scripts/pull.sh --version v0.7.0 --install-dir /opt/llama
 
 # Pull for a specific SM without nvidia-smi (e.g. inside Docker)
 ./scripts/pull.sh --sm 89
@@ -741,9 +744,9 @@ You can also trigger a build manually from the Actions tab with a specific versi
 llama-{version}-linux-cuda{cuda_ver}-sm{sm}-x64.tar.gz
 
 Examples:
-  llama-b4102-linux-cuda12.8-sm89-x64.tar.gz   ← for 4090, L40S
-  llama-b4102-linux-cuda12.4-sm80-x64.tar.gz   ← for A100
-  llama-b4102-linux-cuda12.6-sm100-x64.tar.gz  ← for H100, RTX PRO 6000
+  llama-v0.7.0-linux-cuda12.8-sm89-x64.tar.gz   ← for 4090, L40S
+  llama-v0.7.0-linux-cuda12.4-sm80-x64.tar.gz   ← for A100
+  llama-v0.7.0-linux-cuda12.6-sm100-x64.tar.gz  ← for H100, RTX PRO 6000
 ```
 
 Each archive contains the full llama.cpp install tree (binaries, libraries). A corresponding `.sha256` file is always uploaded alongside it.
@@ -753,7 +756,7 @@ Each archive contains the full llama.cpp install tree (binaries, libraries). A c
 ## Setup: forking this repo
 
 1. Fork this repo to your GitHub account or org
-2. Set `LLAMA_DEPLOY_REPO=keypaa/llamaup` in your environment (or `.bashrc`)
+2. Set `LLAMA_DEPLOY_REPO=<your-account>/<your-fork>` in your environment (or `.bashrc`) — only needed if you pull from your own fork (the default is `keypaa/llamaup`)
 3. Enable GitHub Actions in your fork
 4. Optionally trigger the first build manually from the Actions tab
 5. Run `./scripts/pull.sh` on any of your machines
