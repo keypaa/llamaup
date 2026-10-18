@@ -15,6 +15,7 @@ to the next task until all criteria for the current one pass.
 Create the following empty files and directories if they don't already exist:
 
 ```
+install.sh
 scripts/build.sh
 scripts/pull.sh
 scripts/detect.sh
@@ -384,11 +385,13 @@ Options:
   --dry-run             Show what would be downloaded, without downloading.
   --list                List all available binaries for this version and exit.
   --force               Re-download even if binary already installed.
+  --no-rc               Do not add llamaup to PATH in the shell rc file.
   -h, --help            Show this help.
 
 Environment variables:
   LLAMA_DEPLOY_REPO     GitHub repo to pull from
   LLAMA_DEPLOY_DEBUG    Set to 1 for verbose output
+  LLAMAUP_NO_RC         Set to 1 to skip the shell rc hookup (same as --no-rc)
 ```
 
 ### Edge cases to handle
@@ -546,13 +549,15 @@ Job 2: build (matrix)
       1. Checkout this repo
       2. Install deps (cmake, ninja, git, jq, curl)
       3. Cache llama.cpp source by version tag
-      4. Clone/checkout llama.cpp at resolved version
-      5. cmake configure with -DCMAKE_CUDA_ARCHITECTURES={sm}
-      6. cmake build -j $(nproc)
-      7. cmake install
-      8. Package → llama-{version}-linux-cuda{cuda}-sm{sm}-x64.tar.gz
-      9. sha256sum → paired .sha256 file
-      10. Upload as GitHub Actions artifact
+      4. Cache ccache keyed by (sm, version) for faster rebuilds
+      5. Clone/checkout llama.cpp at resolved version
+      6. cmake configure with -DCMAKE_CUDA_ARCHITECTURES={sm}
+      7. cmake build -j $(nproc) (ccache via compiler launchers)
+      8. cmake install
+      9. Bundle CUDA runtime libraries into install/lib under their SONAME
+      10. Package → llama-{version}-linux-cuda{cuda}-sm{sm}-x64.tar.gz
+      11. sha256sum → paired .sha256 file
+      12. Upload as GitHub Actions artifact
 
 Job 3: smoke-test (matrix, same SM matrix)
   - Depends on: build
@@ -564,6 +569,7 @@ Job 3: smoke-test (matrix, same SM matrix)
 Job 4: release
   - Depends on: smoke-test (all matrix jobs passed)
   - Downloads all artifacts
+  - Deletes any pre-existing release/tag for the version (so re-runs publish cleanly)
   - Creates GitHub Release with tag = resolved version
   - Uploads all .tar.gz and .sha256 files
   - Release body includes GPU table and quick install command
@@ -632,7 +638,8 @@ and developers who want to contribute code.
    - What info to include (`detect.sh --json` output)
 
 4. **Code contribution guidelines**
-   - All scripts must pass `shellcheck`
+   - All scripts must pass `shellcheck -S warning` (CI's lint gate); production
+     scripts should also be clean at default severity
    - Test on at least one real GPU before submitting
    - Keep scripts dependency-minimal (no Python, no Node)
 
@@ -717,7 +724,7 @@ considered complete.
 ### Acceptance criteria
 - [ ] All 8 steps complete without errors
 - [ ] Binary installed by `pull.sh` actually runs
-- [ ] `shellcheck scripts/*.sh` returns 0 warnings
+- [ ] `shellcheck -S warning scripts/*.sh` returns 0 warnings
 
 ---
 
@@ -730,4 +737,4 @@ considered complete.
 - Colour output constants defined once per script: `RED GREEN YELLOW CYAN BOLD RESET`
 - No script should silently succeed when something goes wrong — prefer loud failures
 - All user-facing error messages must suggest a corrective action
-- `shellcheck` must pass on all scripts with zero warnings
+- `shellcheck -S warning` must pass on all scripts with zero warnings

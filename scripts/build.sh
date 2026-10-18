@@ -421,7 +421,7 @@ bundle_cuda_runtime_libs() {
         break
       fi
       local cand
-      cand="$(ls "${search_dir}/${lib_name}"* 2>/dev/null | head -n1 || true)"
+      cand="$(find "$search_dir" -maxdepth 1 -name "${lib_name}*" -print -quit 2>/dev/null || true)"
       if [[ -n "$cand" && -e "$cand" ]]; then
         source_lib="$cand"
         break

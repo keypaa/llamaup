@@ -235,6 +235,7 @@ download_file() {
   local bar_width=30
   local last_percent=-1
   local spin_idx=0
+  # shellcheck disable=SC1003  # intentional backslash spinner glyph
   local spin_chars=('-' '\' '|' '/')
 
   # monitor file growth until curl exits
