@@ -47,7 +47,7 @@ as a versioned tarball, and optionally upload it to GitHub Releases.
 
 Options:
   --sm <version>        SM version to build for (e.g. 89). Auto-detected if omitted.
-  --version <tag>       llama.cpp release tag (e.g. b4200). Default: latest.
+  --version <tag>       llama.cpp release tag (e.g. v0.7.0). Default: latest.
   --cuda <version>      CUDA version string for binary name. Default: auto-detected.
   --output <dir>        Output directory for the tarball. Default: ./dist
   --upload              Upload binary to GitHub Releases after building.
@@ -63,8 +63,8 @@ Environment variables:
   LLAMA_DEPLOY_DEBUG    Set to 1 for verbose output
 
 Examples:
-  ./scripts/build.sh --sm 89 --version b4200
-  ./scripts/build.sh --dry-run --sm 89 --version b4200
+  ./scripts/build.sh --sm 89 --version v0.7.0
+  ./scripts/build.sh --dry-run --sm 89 --version v0.7.0
   ./scripts/build.sh --sm 89 --upload --repo my-org/llamaup
 EOF
   exit 0
@@ -168,7 +168,7 @@ check_upload_auth() {
 
 # ---------------------------------------------------------------------------
 # fetch_latest_version — resolve "latest" to an actual llama.cpp release tag
-# Returns: tag string like "b4200" on stdout
+# Returns: tag string like "v0.7.0" on stdout
 # Exits 1 if the API call fails.
 # ---------------------------------------------------------------------------
 fetch_latest_version() {
@@ -247,7 +247,7 @@ detect_sm() {
 # ---------------------------------------------------------------------------
 # prepare_source — clone llama.cpp or fetch + checkout if already cloned
 # Args:
-#   $1 = target_version (tag, e.g. "b4200")
+#   $1 = target_version (tag, e.g. "v0.7.0")
 #   $2 = src_dir (path to clone into)
 # Exits 1 on git failure.
 # ---------------------------------------------------------------------------
@@ -511,7 +511,7 @@ package() {
 # Creates the release if it does not exist.
 # Args:
 #   $1 = archive_path (absolute path to .tar.gz)
-#   $2 = llama_version (e.g. "b4200")
+#   $2 = llama_version (e.g. "v0.7.0")
 #   $3 = github_repo (e.g. "my-org/llamaup")
 # Exits 1 if gh CLI not authenticated or upload fails.
 # ---------------------------------------------------------------------------

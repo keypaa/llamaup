@@ -45,7 +45,7 @@ Environment variables:
 
 Examples:
   ./scripts/list.sh --repo my-org/llamaup
-  ./scripts/list.sh --repo my-org/llamaup --version b4200
+  ./scripts/list.sh --repo my-org/llamaup --version v0.7.0
   ./scripts/list.sh --repo my-org/llamaup --all
   ./scripts/list.sh --repo my-org/llamaup --sm 89
   ./scripts/list.sh --repo my-org/llamaup --json
@@ -60,7 +60,7 @@ info()    { echo -e "${CYAN}→ $1${RESET}"; }
 # fetch_releases — fetch one or many releases from GitHub API
 # Args:
 #   $1 = github_repo (e.g. "my-org/llamaup")
-#   $2 = version ("latest", "all", or a specific tag like "b4200")
+#   $2 = version ("latest", "all", or a specific tag like "v0.7.0")
 # Returns: JSON array of release objects on stdout
 # Exits 1 on API failure or release not found.
 # ---------------------------------------------------------------------------

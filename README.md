@@ -56,14 +56,27 @@ chmod +x scripts/*.sh
 ./scripts/pull.sh --version v0.7.0
 ```
 
-That's it. The script detects your GPU, finds the matching binary, verifies the checksum, and installs it to `~/.local/bin/llama`. No `LLAMA_DEPLOY_REPO` needed — it defaults to `keypaa/llamaup`.
+That's it. The script detects your GPU, finds the matching binary, verifies the checksum, and installs it to `~/.local/bin/llama-<version>-sm<sm>`. No `LLAMA_DEPLOY_REPO` needed — it defaults to `keypaa/llamaup`.
 
 The shipped archive bundles the CUDA runtime libraries used by llama.cpp, so the target machine only needs a compatible NVIDIA driver. It does not need to match the exact CUDA toolkit version used during the build.
 
-**Add to your PATH:**
+**PATH and environment are configured for you.** `pull.sh` writes `~/.local/bin/llama-env.sh`, creates a stable `~/.local/bin/llama-current` symlink to the newest install, and adds a hook to `~/.bashrc` (or `~/.zshrc`) so new shells pick it up. To use it in the **current** shell:
+
 ```bash
-export PATH="$HOME/.local/bin:$PATH"
+source ~/.local/bin/llama-env.sh
+# then:
+llama-cli --version
 ```
+
+It exports:
+
+| Variable | Meaning |
+| --- | --- |
+| `PATH` | `~/.local/bin` (so `llama-cli`, `llama-server`, `llama-bench`, … work) |
+| `LLAMA_HOME` | Stable path to the newest install (`~/.local/bin/llama-current`) — survives version changes |
+| `LLAMA_INSTALL_DIR` | Exact versioned install dir (e.g. `~/.local/bin/llama-v0.7.0-sm75`) |
+
+Skip the shell-rc hookup with `--no-rc` (or `LLAMAUP_NO_RC=1`).
 
 ---
 

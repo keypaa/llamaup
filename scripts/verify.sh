@@ -42,7 +42,7 @@ Options:
   -h, --help        Show this help.
 
 Examples:
-  ./scripts/verify.sh llama-b4200-linux-cuda12.4-sm89-x64.tar.gz
+  ./scripts/verify.sh llama-v0.7.0-linux-cuda12.4-sm89-x64.tar.gz
   ./scripts/verify.sh archive.tar.gz archive.tar.gz.sha256
   ./scripts/verify.sh archive.tar.gz https://example.com/archive.tar.gz.sha256
   ./scripts/verify.sh archive.tar.gz a3f1c2...(64 hex chars)
