@@ -400,6 +400,8 @@ configure_environment() {
   bin_parent_dir="$(dirname "$install_dir")"
   local current_link="${bin_parent_dir}/llama-current"
   local env_file="${bin_parent_dir}/llama-env.sh"
+  local rc_file=""
+  local rc_hooked=false
 
   # Stable pointer that always refers to the newest installed build (the
   # versioned directory name changes with every version/SM, this does not).
@@ -420,21 +422,20 @@ EOF
   chmod 644 "$env_file" 2>/dev/null || true
 
   if [[ "$update_rc" == "true" ]]; then
-    local rc_file
     case "${SHELL##*/}" in
       zsh) rc_file="${HOME}/.zshrc" ;;
       *)   rc_file="${HOME}/.bashrc" ;;
     esac
     local marker="# llamaup environment"
     if grep -qF "$marker" "$rc_file" 2>/dev/null; then
-      : # already hooked
+      rc_hooked=true
     else
       if {
         echo ""
         echo "$marker"
         echo "[ -f \"${env_file}\" ] && . \"${env_file}\""
       } >> "$rc_file" 2>/dev/null; then
-        success "Added llamaup to PATH in ${rc_file}"
+        rc_hooked=true
       else
         warn "Could not update ${rc_file}; add this line manually:\n  . \"${env_file}\""
       fi
@@ -446,15 +447,17 @@ EOF
   export LLAMA_HOME="${current_link}"
   export LLAMA_INSTALL_DIR="${install_dir}"
 
-  echo
-  echo -e "  ${BOLD}Environment:${RESET}"
-  echo -e "    PATH              → ${bin_parent_dir}"
-  echo -e "    LLAMA_HOME        → ${current_link}"
-  echo -e "    LLAMA_INSTALL_DIR → ${install_dir}"
-  if [[ "$update_rc" == "true" ]]; then
-    echo -e "    New shells inherit this automatically (${rc_file:-rc file})."
+  if [[ "${LLAMA_DEPLOY_DEBUG:-}" == "1" ]]; then
+    echo -e "  PATH              → ${bin_parent_dir}"
+    echo -e "  LLAMA_HOME        → ${current_link}"
+    echo -e "  LLAMA_INSTALL_DIR → ${install_dir}"
   fi
-  echo -e "    This shell now: ${CYAN}source \"${env_file}\"${RESET}"
+
+  if [[ "$update_rc" == "true" && "${rc_hooked:-false}" == "true" ]]; then
+    success "PATH ready in new shells (${rc_file}) — or now: source \"${env_file}\""
+  else
+    info "To use in this shell: source \"${env_file}\""
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -681,24 +684,10 @@ main() {
   configure_environment "$versioned_dir" "$update_rc"
 
   echo
-  echo -e "  ${BOLD}Next steps:${RESET}"
-  echo -e "    1. PATH is configured — open a new shell, or run: ${CYAN}source \"$(dirname "$versioned_dir")/llama-env.sh\"${RESET}"
-  echo -e "    2. Run with auto-download: ${CYAN}llama-cli -hf bartowski/Qwen2.5-7B-Instruct-GGUF:Q4_K_M -cnv${RESET}"
-  echo
-  echo -e "  ${BOLD}Key tools (all others also available in PATH):${RESET}"
-  echo -e "    llama-cli      # Command-line inference"
-  echo -e "    llama-server   # HTTP API + web UI"
-  echo -e "    llama-bench    # Benchmark performance"
-  echo -e "    llama-quantize # Re-quantize GGUF models"
-  echo -e "    llama-embedding # Generate embeddings"
-  echo -e "    llama-models   # Browse & download GGUF models from HuggingFace"
-  echo
-  echo -e "  ${BOLD}Quick examples:${RESET}"
-  echo -e "    llama-cli -hf user/repo:Q4_K_M -cnv             # Auto-download + interactive chat"
-  echo -e "    llama-cli -m model.gguf -p \"Hello!\" -n 512     # One-shot prompt"
-  echo -e "    llama-server -m model.gguf -c 8192 --port 8080  # Start web UI + API"
-  echo
-  echo -e "  See README.md for full usage guide: ${CYAN}https://github.com/${github_repo}#using-llamacpp-quick-reference${RESET}"
+  echo -e "  ${BOLD}Try it:${RESET}"
+  echo -e "    ${CYAN}llama-cli -hf bartowski/Qwen2.5-7B-Instruct-GGUF:Q4_K_M -ngl 99${RESET}   # auto-download + chat"
+  echo -e "    ${CYAN}llama-server -m model.gguf -ngl 99 --port 8090${RESET}                  # API + web UI"
+  echo -e "  Docs: ${CYAN}https://github.com/${github_repo}#quick-start${RESET}"
   echo
 }
 

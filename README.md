@@ -80,6 +80,55 @@ Skip the shell-rc hookup with `--no-rc` (or `LLAMAUP_NO_RC=1`).
 
 ---
 
+## Normal workflow (end to end)
+
+This is all a typical user ever needs. The other scripts in this repo are for
+contributors, CI, and debugging — not for day-to-day use.
+
+**1. Install (once per machine)**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/keypaa/llamaup/main/install.sh | bash
+```
+
+It detects your GPU, downloads the matching prebuilt binary, verifies the
+checksum, installs it, and adds `~/.local/bin` to your `PATH`. Only an NVIDIA
+driver is required — no CUDA toolkit, compiler, or root.
+
+**2. Use it** (open a new shell, or `source ~/.local/bin/llama-env.sh` once)
+
+```bash
+# Chat with a model auto-downloaded from HuggingFace (-ngl 99 = all layers on GPU)
+llama-cli -hf bartowski/Qwen2.5-7B-Instruct-GGUF:Q4_K_M -ngl 99
+
+# One-shot prompt with your own model file
+llama-cli -m model.gguf -p "Summarize this:" -n 256 -ngl 99 -st
+
+# Local API + web UI
+llama-server -m model.gguf -ngl 99 --port 8090
+
+# Benchmark your GPU
+llama-bench -m model.gguf -ngl 99
+```
+
+Drop `-ngl 99` (or use `-ngl 0`) to run on CPU.
+
+**3. Update to a newer llama.cpp**
+
+Releases are rebuilt daily from upstream `latest`. Re-run the same installer (or
+`./scripts/pull.sh` from a clone). `pull.sh` installs the new version alongside
+the old one and repoints `~/.local/bin/llama-current`. If you're already current
+it does nothing; use `--force` to re-download.
+
+**4. Remove**
+
+```bash
+rm -rf ~/.local/bin/llama-*     # remove installed builds
+# then delete the "llamaup environment" block from ~/.bashrc if you want
+```
+
+---
+
 ## Using llama.cpp (Quick Reference)
 
 After installation, you have three main binaries available:
@@ -509,6 +558,7 @@ The main install tool. Detects your GPU, downloads the matching binary, verifies
 - `--dry-run` — Show what would be downloaded without doing it
 - `--list` — List all available binaries for this version
 - `--force` — Re-download even if already installed
+- `--no-rc` — Do not add llamaup to `PATH` in your shell rc file
 
 ### `scripts/build.sh` — Build and package binaries
 
